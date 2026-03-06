@@ -1,0 +1,12 @@
+# Cloudflare Pages Configuration
+# This is a purely static site - no Workers needed.
+# All Telegram MTProto connections happen client-side via WebSocket.
+
+name = "tgcf-dl"
+compatibility_date = "2025-03-01"
+
+# Pages will serve the built output from `dist/`
+# Deploy with: wrangler pages deploy dist --project-name tgcf-dl
+
+[site]
+bucket = "./dist"
