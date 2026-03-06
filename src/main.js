@@ -546,8 +546,76 @@ function addToHistory(fileInfo) {
   list.prepend(item);
 }
 
+// ===== Internet / Connection Recovery =====
+let reconnectTimer = null;
+
+function startConnectionWatcher() {
+  // Watch for browser going online/offline
+  window.addEventListener('online', () => {
+    addLog('info', '🌐 Internet restored. Reconnecting in 5s...');
+    scheduleReconnect(5000);
+  });
+
+  window.addEventListener('offline', () => {
+    addLog('warn', '📡 Internet lost. Waiting for connection...');
+    setConnectionStatus('disconnected');
+    isConnected = false;
+    const btn = document.getElementById('btnConnect');
+    if (btn) { btn.innerHTML = '⚡ Connect'; btn.className = 'btn-primary'; }
+  });
+
+  // Periodic health check every 60s — if we lost connection silently, reconnect
+  setInterval(async () => {
+    if (!downloader || !navigator.onLine) return;
+    
+    if (isConnected && downloader.connected) {
+      // Everything seems fine
+      return;
+    }
+
+    // We think we're disconnected but internet is available — try to reconnect
+    if (navigator.onLine && downloader._credentials) {
+      addLog('info', '🔄 Periodic check: reconnecting...');
+      try {
+        await downloader.reconnect();
+        isConnected = true;
+        setConnectionStatus('connected');
+        const btn = document.getElementById('btnConnect');
+        if (btn) { btn.innerHTML = '🔌 Disconnect'; btn.className = 'btn-danger'; }
+        startFileListener();
+        addLog('success', '✅ Auto-reconnected successfully!');
+      } catch {
+        addLog('dim', 'Reconnect attempt failed. Will retry in 60s.');
+      }
+    }
+  }, 60000);
+}
+
+function scheduleReconnect(delayMs) {
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  reconnectTimer = setTimeout(async () => {
+    if (!downloader || isConnected) return;
+    try {
+      setConnectionStatus('connecting');
+      await downloader.reconnect();
+      isConnected = true;
+      setConnectionStatus('connected');
+      const btn = document.getElementById('btnConnect');
+      if (btn) { btn.innerHTML = '🔌 Disconnect'; btn.className = 'btn-danger'; }
+      startFileListener();
+      addLog('success', '✅ Reconnected after internet restored!');
+    } catch (e) {
+      addLog('warn', `Reconnect failed: ${e.message}. Retrying in 30s...`);
+      scheduleReconnect(30000);
+    }
+  }, delayMs);
+}
+
 // ===== Boot =====
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', () => {
+  init();
+  startConnectionWatcher();
+});
 window.addEventListener('beforeunload', () => {
   if (downloader && isConnected) downloader.disconnect().catch(() => {});
 });
