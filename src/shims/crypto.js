@@ -62,7 +62,6 @@ export function createDecipheriv() {
  * GramJS's Password.js expects this to return a Promise (their own "sync" is also async).
  */
 export async function pbkdf2Sync(password, salt, iterations, ...args) {
-  console.log('[crypto shim] pbkdf2Sync called:', { iterations, argsLen: args.length, arg0Type: typeof args[0], arg1: args[1] || args[0] });
   const keylen = typeof args[0] === 'number' ? args[0] : 64;
   const digest = typeof args[1] === 'string' ? args[1] : (typeof args[0] === 'string' ? args[0] : 'sha512');
   const hashMap = { sha512: 'SHA-512', sha256: 'SHA-256', sha1: 'SHA-1' };

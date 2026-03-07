@@ -1,150 +1,127 @@
-# 📥 Telegram File Downloader
+# 📥 Telegram Client — Browser-Based MTProto
 
-**Client-side Telegram file downloader using MTProto protocol.** No file size limits. No server processing. Everything runs in your browser.
+A full-featured Telegram client running entirely in your browser. No server needed — connects directly to Telegram via MTProto WebSocket using [GramJS](https://gram.js.org).
 
-Built with [GramJS](https://gram.js.org) (Telethon for JavaScript) and deployed as a static site on [Cloudflare Pages](https://pages.cloudflare.com).
+**[Live Demo](https://tgcfworkersdlbot.pages.dev)** • **[Deploy Your Own](#deploy)**
 
-## ✨ How It Works
+## ✨ Features
 
-```
-┌──────────────────────────────────────────────────────────┐
-│                    YOUR BROWSER                          │
-│                                                          │
-│  ┌────────────┐    WebSocket (MTProto)    ┌───────────┐  │
-│  │  GramJS     │◄─────────────────────────►│ Telegram  │  │
-│  │  Client     │                           │ Servers   │  │
-│  └────────────┘                           └───────────┘  │
-│       │                                                   │
-│       ▼                                                   │
-│  File saved directly to your device                       │
-│  Session stored in localStorage                           │
-└──────────────────────────────────────────────────────────┘
-         │
-         │  Static files only (HTML/JS/CSS)
-         ▼
-┌──────────────────┐
-│ Cloudflare Pages │  ← No Workers needed, just static hosting
-└──────────────────┘
-```
+### 🤖 Bot Mode
+- Download files from Telegram via bot token — **no file size limits**
+- Parallel multi-connection downloads (up to 8x faster)
+- Receive incoming messages and files from your bot
+- Reply to messages directly from the browser
+- Paste any `t.me` link to fetch and download files
 
-### Why This Approach?
+### 👤 User Mode
+- **Login with phone number** — full Telegram user session
+- **2FA support** — two-factor authentication works in browser
+- **Multi-account** — up to 10 accounts with account switcher
+- **Browse all chats** — private, groups, channels with unread counts
+- **Saved Messages** — your self-chat shows as "Saved Messages"
+- **Search** — find chats by name, @username, or Telegram ID
+- **Send & receive messages** — real-time with new message listener
+- **Photo thumbnails** — inline previews with full-size lightbox
+- **Video & audio** — play button with inline player, download to disk
+- **File downloads** — any file type with progress bar
+- **Stealth mode** — read messages without sending read receipts
+- **Auto-load photos** — configurable thumbnail auto-download
 
-| Approach | File Size Limit | Server Needed | Persistent Connection |
-|----------|----------------|---------------|----------------------|
-| Bot API (HTTP) | 20 MB | Yes | No |
-| Pyrogram/Telethon on Workers | Workers timeout (30s) | Yes | Impossible |
-| **GramJS in Browser** | **Unlimited** ✅ | **No** ✅ | **Yes (WebSocket)** ✅ |
+### ⚙️ Settings (separate for Bot & User mode)
+- Parallel workers & chunk size configuration
+- Cloudflare Proxy toggle with custom domain
+- Stealth mode, auto-photos, notifications
+- Send with Enter / Ctrl+Enter
+- Font size options
 
-- **Telegram Bot API** limits downloads to 20MB and needs a server
-- **Cloudflare Workers** have execution time limits (30s free / 60s paid) — too short for large files
-- **This app** uses MTProto directly from the browser via WebSocket — no size limits, no timeouts, no server costs
+## 🚀 Deploy
 
-## 🚀 Quick Start
+### Cloudflare Pages (Recommended)
 
-### Prerequisites
+1. Fork this repo
+2. Go to [Cloudflare Pages](https://pages.cloudflare.com) → Create a project → Connect your fork
+3. Build settings:
+   - **Build command:** `npm run build`
+   - **Output directory:** `dist`
+4. Deploy!
 
-You need two things:
-
-1. **Telegram API Credentials** — Get from [my.telegram.org](https://my.telegram.org):
-   - Go to "API development tools"
-   - Create an app → note your **API ID** and **API Hash**
-
-2. **Bot Token** — Get from [@BotFather](https://t.me/BotFather):
-   - Create a bot or use existing one
-   - The bot must be a **member** of any private channel you want to download from
-
-### Run Locally
+### Local Development
 
 ```bash
-# Clone the repo
 git clone https://github.com/CloudflareHackers/TGCFWorkersDLBot.git
 cd TGCFWorkersDLBot
-
-# Install dependencies
 npm install
-
-# Start dev server
 npm run dev
 ```
 
-Open http://localhost:3000 and:
-1. Enter your **API ID**, **API Hash**, and **Bot Token**
-2. Click **Connect** — the bot authenticates via MTProto WebSocket
-3. Paste a Telegram message link (e.g., `https://t.me/c/2113604672/730`)
-4. Click **Download** — file downloads directly to your device
+Open `http://localhost:3000`
 
-### Deploy to Cloudflare Pages
+## 🌐 Proxy Setup (Optional)
 
-**Option 1: CLI**
+If Telegram WebSocket connections are blocked in your region, deploy the **TG-WS-API** proxy:
+
+### One-Click Deploy
+
+[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/CloudflareHackers/TG-WS-API)
+
+> This deploys a Cloudflare Worker with Durable Objects that proxies WebSocket connections to Telegram servers. Works on the **free plan**.
+
+### Manual Deploy
+
 ```bash
-npm run build
-npx wrangler pages deploy dist --project-name tgcf-dl
+git clone https://github.com/CloudflareHackers/TG-WS-API.git
+cd TG-WS-API
+npm install
+npx wrangler deploy
 ```
 
-**Option 2: Git Integration (Recommended)**
-1. Push to GitHub/GitLab
-2. Go to [Cloudflare Dashboard](https://dash.cloudflare.com) → Pages → Create Project
-3. Connect your repository
-4. Build settings:
-   - Build command: `npm run build`
-   - Build output directory: `dist`
-5. Deploy!
+### Configure in the App
 
-## 📁 Supported Link Formats
+1. Open Settings in the web app
+2. Enable **🌐 Cloudflare Proxy**
+3. Enter your worker domain: `tg-ws-api.your-account.workers.dev`
+4. Save — all Telegram connections now route through your proxy
 
-| Format | Example |
-|--------|---------|
-| Private channel | `https://t.me/c/2113604672/730` |
-| Public channel | `https://t.me/channelname/123` |
-| tg:// protocol | `tg://privatepost?channel=2113604672&msg_id=730` |
+## 🔐 Default API Credentials
+
+The app comes pre-filled with Telegram Web's public API credentials:
+- **API ID:** `1025907`
+- **API Hash:** `452b0359b988148995f22ff0f4229750`
+
+You can use your own from [my.telegram.org](https://my.telegram.org) → API Development Tools.
 
 ## 🏗️ Architecture
 
 ```
-TGCFWorkersDLBot/
-├── index.html              # Entry point
-├── src/
-│   ├── main.js             # UI logic, event handling, app bootstrap
-│   ├── telegram-client.js  # GramJS wrapper: connect, fetch, download
-│   ├── link-parser.js      # Telegram URL parser & utilities
-│   └── style.css           # Dark theme UI styles
-├── vite.config.js          # Vite bundler config with Buffer polyfill
-├── wrangler.toml           # Cloudflare Pages config
-└── package.json
+Browser (GramJS MTProto)
+  ↓ WebSocket (direct or via CF Proxy)
+Telegram Servers (DC1-DC5)
 ```
 
-### Key Design Decisions
+- **No backend server** — everything runs client-side in the browser
+- **Sessions stored in localStorage** — never leaves your device
+- **IndexedDB** for message/file history persistence
+- **GramJS** for MTProto protocol implementation
+- **Vite** for bundling with tree-shaking
 
-- **GramJS** (`telegram` npm package) is Telethon ported to JavaScript. It speaks MTProto natively and works in browsers via WebSocket.
-- **Buffer polyfill** is required because GramJS uses Node.js `Buffer` internally.
-- **Session persistence** uses `localStorage` — reconnecting is instant after first login.
-- **No backend** — Cloudflare Pages serves static files only. All crypto, MTProto, and file handling happen in the browser.
+## 📦 Tech Stack
+
+| Component | Technology |
+|-----------|-----------|
+| MTProto Client | [GramJS](https://gram.js.org) (telegram package) |
+| Build Tool | [Vite](https://vitejs.dev) |
+| Hosting | [Cloudflare Pages](https://pages.cloudflare.com) |
+| Proxy (optional) | [Cloudflare Workers + Durable Objects](https://github.com/CloudflareHackers/TG-WS-API) |
+| Crypto | Web Crypto API (SHA-256, PBKDF2) |
+| Storage | localStorage + IndexedDB |
 
 ## 🔒 Security
 
-- **Credentials stay local** — API ID, Hash, and Bot Token are stored only in your browser's `localStorage`. They are never sent to any server except Telegram's MTProto servers.
-- **Session string** — The MTProto session is saved locally for fast reconnect. Clear it anytime with the 🗑️ button.
-- **Open source** — Audit the code yourself. No tracking, no analytics, no third-party scripts.
+- All processing happens in your browser
+- Credentials and sessions never leave your device
+- No server-side data collection
+- Open source — audit the code yourself
 
-## ⚠️ Important Notes
-
-1. **Bot must have access** — For private channels, the bot must be an admin/member of the channel.
-2. **Large files = RAM** — Files are buffered in browser memory before saving. Very large files (>2GB) may hit browser memory limits.
-3. **API credentials** — Never share your API ID/Hash. They're tied to your Telegram account.
-
-## 🛠️ Development
-
-```bash
-# Dev server with hot reload
-npm run dev
-
-# Production build
-npm run build
-
-# Preview production build locally
-npm run preview
-```
-
-## 📜 License
+## 📄 License
 
 MIT
