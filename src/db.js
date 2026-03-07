@@ -91,6 +91,7 @@ export async function addMessageToConversation(msgData) {
         id: msgData.id,
         text: msgData.text || '',
         hasMedia: !!msgData.hasMedia,
+        thumbnailUrl: msgData.thumbnailUrl || null,
         date: msgData.date instanceof Date ? msgData.date.toISOString() : (msgData.date || new Date().toISOString()),
         fromBot: !!msgData.fromBot, // true if sent by us
       };

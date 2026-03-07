@@ -606,8 +606,21 @@ function renderConversationItem(convo) {
  * Called when a new message arrives. Groups by sender, updates the conversation item.
  */
 async function addIncomingMessage(msgInfo) {
-  // Save to conversation in IndexedDB
-  const convo = await addMessageToConversation(msgInfo);
+  // Download photo thumbnail if available
+  let thumbnailUrl = null;
+  if (msgInfo.hasMedia && msgInfo.message?.media?.photo && downloader) {
+    try {
+      thumbnailUrl = await downloader.downloadPhotoThumbnail(msgInfo.message);
+    } catch {}
+  }
+  if (thumbnailUrl) {
+    msgInfo.thumbnailUrl = thumbnailUrl;
+  }
+
+  // Save to conversation in IndexedDB (with thumbnail if available)
+  const convoData = { ...msgInfo };
+  if (thumbnailUrl) convoData.thumbnailUrl = thumbnailUrl;
+  const convo = await addMessageToConversation(convoData);
   if (convo) {
     renderConversationItem(convo);
   }
@@ -617,6 +630,8 @@ async function addIncomingMessage(msgInfo) {
     appendMessageToChatPopup({
       text: msgInfo.text || '',
       hasMedia: msgInfo.hasMedia,
+      thumbnailUrl: thumbnailUrl || null,
+      _rawMessage: msgInfo.message,
       date: msgInfo.date instanceof Date ? msgInfo.date.toISOString() : msgInfo.date,
       fromBot: false,
     });
@@ -675,9 +690,16 @@ function appendMessageToChatPopup(msg) {
   } else {
     // Their message (left-aligned, clickable to reply-to)
     div.className = 'reply-received clickable-msg';
-    const content = msg.text || (msg.hasMedia ? '📎 Photo/Media' : '[Empty]');
+    const content = msg.text || (msg.hasMedia ? '' : '[Empty]');
+    let photoHtml = '';
+    if (msg.thumbnailUrl) {
+      photoHtml = `<img src="${msg.thumbnailUrl}" class="chat-photo-thumb" alt="📷 Photo" onclick="event.stopPropagation(); window._showPhotoLightbox && window._showPhotoLightbox('${msg.thumbnailUrl}', ${msg.id || 0})" />`;
+    } else if (msg.hasMedia && !msg.text) {
+      photoHtml = '<div class="chat-photo-placeholder">📷 Photo</div>';
+    }
     div.innerHTML = `
-      <div class="reply-received-text">${escapeHtml(content)}</div>
+      ${photoHtml}
+      ${content ? `<div class="reply-received-text">${escapeHtml(content)}</div>` : ''}
       <div class="reply-received-time">${time} • tap to reply ↩</div>
     `;
     div.addEventListener('click', () => {
@@ -705,6 +727,19 @@ function setReplyTo(msgId, preview) {
 
 // Expose clearReplyTo globally for inline onclick
 window._clearReplyTo = () => { replyToMsgId = null; };
+
+// Photo lightbox — show full-size photo in overlay
+window._showPhotoLightbox = (thumbUrl, msgId) => {
+  // Create lightbox overlay
+  const overlay = document.createElement('div');
+  overlay.className = 'photo-lightbox';
+  overlay.innerHTML = `
+    <img src="${thumbUrl}" alt="Photo" />
+    <div class="lightbox-close">✕</div>
+  `;
+  overlay.addEventListener('click', () => overlay.remove());
+  document.body.appendChild(overlay);
+};
 
 function closeReplyModal() {
   document.getElementById('replyModal').classList.add('hidden');

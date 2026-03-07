@@ -651,6 +651,46 @@ export class TGDownloader {
   }
 
   /**
+   * Download a photo thumbnail as a data URL (base64).
+   * Used for showing inline photo previews in chat.
+   */
+  async downloadPhotoThumbnail(message) {
+    if (!this.client || !this.connected) return null;
+    try {
+      const media = message.media;
+      if (!media || (!media.photo && !media.document)) return null;
+
+      // Download small thumbnail
+      const buffer = await this.client.downloadMedia(message, {
+        thumb: 0, // smallest thumbnail
+      });
+      if (!buffer || buffer.length === 0) return null;
+
+      // Convert to base64 data URL
+      const base64 = Buffer.from(buffer).toString('base64');
+      const mimeType = media.photo ? 'image/jpeg' : (media.document?.mimeType || 'image/jpeg');
+      return `data:${mimeType};base64,${base64}`;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Download full-size photo as blob URL.
+   */
+  async downloadFullPhoto(message) {
+    if (!this.client || !this.connected) return null;
+    try {
+      const buffer = await this.client.downloadMedia(message);
+      if (!buffer) return null;
+      const blob = new Blob([buffer], { type: 'image/jpeg' });
+      return URL.createObjectURL(blob);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Send a text message reply to a chat.
    * @param {object} chatPeer - the peerId from the original message
    * @param {string} text - reply text
