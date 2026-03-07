@@ -83,7 +83,8 @@ async function handleWebSocket(targetHost, path) {
   const [client, server] = Object.values(new WebSocketPair());
 
   // Connect to the actual Telegram server
-  const targetUrl = `wss://${targetHost}:443/${path}`;
+  // CF Workers fetch() requires https:// (not wss://) for WebSocket upgrade
+  const targetUrl = `https://${targetHost}/${path}`;
   
   try {
     const upstreamResponse = await fetch(targetUrl, {
