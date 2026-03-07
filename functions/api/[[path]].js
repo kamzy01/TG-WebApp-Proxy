@@ -5,7 +5,6 @@
  * Example: /api/pluto.web.telegram.org/apiws
  * 
  * Supports both HTTP and WebSocket proxying.
- * WebSocket: Creates a pair, connects to Telegram, pipes data bidirectionally.
  */
 
 export async function onRequest(context) {
@@ -16,19 +15,17 @@ export async function onRequest(context) {
     return new Response('Missing target host', { status: 400 });
   }
 
-  // First segment is the target Telegram host
   const targetHost = pathSegments[0];
   
-  // Validate it's a Telegram domain
+  // Validate Telegram domain
   const allowedPattern = /^[a-z0-9\-]+\.(?:web\.)?telegram\.org$/i;
   if (!allowedPattern.test(targetHost)) {
     return new Response('Forbidden: not a Telegram domain', { status: 403 });
   }
 
-  // Remaining path
   const remainingPath = pathSegments.slice(1).join('/');
 
-  // Handle CORS preflight
+  // CORS preflight
   if (request.method === 'OPTIONS') {
     return new Response(null, {
       headers: {
@@ -39,25 +36,68 @@ export async function onRequest(context) {
     });
   }
 
-  // Handle WebSocket upgrade
+  // WebSocket upgrade — use fetch-based approach
   const upgradeHeader = request.headers.get('Upgrade');
   if (upgradeHeader && upgradeHeader.toLowerCase() === 'websocket') {
-    return handleWebSocket(targetHost, remainingPath);
+    const targetUrl = `https://${targetHost}/${remainingPath}`;
+
+    // Forward the entire request to Telegram, preserving the Upgrade header
+    // Cloudflare will handle the WebSocket upgrade transparently
+    try {
+      const resp = await fetch(targetUrl, {
+        headers: {
+          'Upgrade': 'websocket',
+          'Host': targetHost,
+        },
+      });
+
+      // If fetch returns a WebSocket, create a WebSocketPair to bridge
+      if (resp.webSocket) {
+        const upstream = resp.webSocket;
+        const pair = new WebSocketPair();
+        const [client, server] = Object.values(pair);
+
+        upstream.accept();
+        server.accept();
+
+        // Bridge messages bidirectionally
+        upstream.addEventListener('message', evt => {
+          try { server.send(evt.data); } catch {}
+        });
+        server.addEventListener('message', evt => {
+          try { upstream.send(evt.data); } catch {}
+        });
+
+        upstream.addEventListener('close', evt => {
+          try { server.close(evt.code || 1000, evt.reason || ''); } catch {}
+        });
+        server.addEventListener('close', evt => {
+          try { upstream.close(evt.code || 1000, evt.reason || ''); } catch {}
+        });
+
+        upstream.addEventListener('error', () => {
+          try { server.close(1011, 'upstream error'); } catch {}
+        });
+        server.addEventListener('error', () => {
+          try { upstream.close(1011, 'client error'); } catch {}
+        });
+
+        return new Response(null, { status: 101, webSocket: client });
+      }
+
+      // Fallback: return the response as-is (shouldn't happen)
+      return new Response('WebSocket upgrade not supported by upstream', { status: 502 });
+    } catch (err) {
+      return new Response(`WS Proxy error: ${err.message}`, { status: 502 });
+    }
   }
 
   // Regular HTTP proxy
   const targetUrl = `https://${targetHost}/${remainingPath}`;
-  const proxyHeaders = new Headers(request.headers);
-  proxyHeaders.set('Host', targetHost);
-  proxyHeaders.delete('cf-connecting-ip');
-  proxyHeaders.delete('cf-ipcountry');
-  proxyHeaders.delete('cf-ray');
-  proxyHeaders.delete('cf-visitor');
-
   try {
     const response = await fetch(targetUrl, {
       method: request.method,
-      headers: proxyHeaders,
+      headers: { 'Host': targetHost },
       body: request.method !== 'GET' && request.method !== 'HEAD' ? request.body : undefined,
     });
 
@@ -66,88 +106,9 @@ export async function onRequest(context) {
 
     return new Response(response.body, {
       status: response.status,
-      statusText: response.statusText,
       headers: responseHeaders,
     });
   } catch (err) {
     return new Response(`Proxy error: ${err.message}`, { status: 502 });
   }
-}
-
-/**
- * Handle WebSocket proxy using Cloudflare's WebSocket API.
- * Creates a client-facing WebSocket pair and connects upstream to Telegram.
- */
-async function handleWebSocket(targetHost, path) {
-  // Create the WebSocket pair for the client
-  const [client, server] = Object.values(new WebSocketPair());
-
-  // Connect to the actual Telegram server
-  // CF Workers fetch() requires https:// (not wss://) for WebSocket upgrade
-  const targetUrl = `https://${targetHost}/${path}`;
-  
-  try {
-    const upstreamResponse = await fetch(targetUrl, {
-      headers: {
-        'Upgrade': 'websocket',
-      },
-    });
-
-    const upstream = upstreamResponse.webSocket;
-    if (!upstream) {
-      server.accept();
-      server.close(1011, 'Failed to establish upstream WebSocket');
-      return new Response('WebSocket upgrade failed', { status: 502 });
-    }
-
-    upstream.accept();
-    server.accept();
-
-    // Pipe upstream → client
-    upstream.addEventListener('message', (event) => {
-      try {
-        server.send(event.data);
-      } catch {}
-    });
-
-    upstream.addEventListener('close', (event) => {
-      try {
-        server.close(event.code || 1000, event.reason || 'upstream closed');
-      } catch {}
-    });
-
-    upstream.addEventListener('error', () => {
-      try {
-        server.close(1011, 'upstream error');
-      } catch {}
-    });
-
-    // Pipe client → upstream
-    server.addEventListener('message', (event) => {
-      try {
-        upstream.send(event.data);
-      } catch {}
-    });
-
-    server.addEventListener('close', (event) => {
-      try {
-        upstream.close(event.code || 1000, event.reason || 'client closed');
-      } catch {}
-    });
-
-    server.addEventListener('error', () => {
-      try {
-        upstream.close(1011, 'client error');
-      } catch {}
-    });
-
-  } catch (err) {
-    server.accept();
-    server.close(1011, `Upstream connection failed: ${err.message}`);
-  }
-
-  return new Response(null, {
-    status: 101,
-    webSocket: client,
-  });
 }
