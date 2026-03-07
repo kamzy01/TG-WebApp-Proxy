@@ -8,7 +8,7 @@ import './polyfills.js';
 import './style.css';
 import { TGDownloader } from './telegram-client.js';
 import { parseTelegramLink, describeParsedLink, formatFileSize, getFileIcon } from './link-parser.js';
-import { initDB, saveMessage, getAllMessages, saveFile, getAllFiles, markFileDownloaded, clearAllData } from './db.js';
+import { initDB, addMessageToConversation, addBotReplyToConversation, getAllConversations, getConversation, saveFile, getAllFiles, markFileDownloaded, clearAllData } from './db.js';
 
 // ===== State =====
 let downloader = null;
@@ -208,10 +208,10 @@ function renderApp(hasSavedCreds) {
 // ===== Restore from IndexedDB =====
 async function restoreFromDB() {
   try {
-    // Restore messages
-    const msgs = await getAllMessages(50);
-    for (const msg of msgs.reverse()) {
-      renderRestoredMessage(msg);
+    // Restore conversations (grouped by sender)
+    const convos = await getAllConversations();
+    for (const convo of convos) {
+      renderConversationItem(convo);
     }
     
     // Restore files
@@ -220,36 +220,12 @@ async function restoreFromDB() {
       renderRestoredFile(file);
     }
     
-    if (msgs.length || files.length) {
-      addLog('dim', `Restored ${msgs.length} messages and ${files.length} files from local storage.`);
+    if (convos.length || files.length) {
+      addLog('dim', `Restored ${convos.length} conversations and ${files.length} files.`);
     }
   } catch (e) {
     addLog('dim', 'Could not restore saved data.');
   }
-}
-
-function renderRestoredMessage(msg) {
-  const list = document.getElementById('messagesList');
-  if (!list) return;
-  if (list.querySelector('.text-dim')) list.innerHTML = '';
-
-  const typeIcons = { User: '👤', Channel: '📢', Group: '👥' };
-  const typeIcon = typeIcons[msg.senderType] || '💬';
-  const time = msg.date ? new Date(msg.date).toLocaleTimeString() : '';
-  const preview = msg.text || (msg.hasMedia ? '📎 [Media]' : '[Empty]');
-
-  const item = document.createElement('div');
-  item.className = 'msg-item';
-  item.innerHTML = `
-    <div class="msg-sender">
-      <span class="sender-badge sender-${(msg.senderType || 'user').toLowerCase()}">${typeIcon} ${msg.senderType || 'User'}</span>
-      <span class="msg-sender-name">${escapeHtml(msg.senderName || 'Unknown')}</span>
-      <span class="msg-time">${time}</span>
-    </div>
-    <div class="msg-text">${escapeHtml(preview.length > 150 ? preview.slice(0, 150) + '...' : preview)}</div>
-    ${msg.hasMedia ? '<div class="msg-media-badge">📎 Has attachment</div>' : ''}
-  `;
-  list.prepend(item);
 }
 
 function renderRestoredFile(file) {
@@ -516,86 +492,149 @@ async function handleIncomingDownload(itemEl, fileRef) {
   }
 }
 
-// ===== Incoming Messages =====
-let msgCounter = 0;
+// ===== Incoming Messages (Conversation-based) =====
+// Shows one item per sender with latest message. Click opens full chat.
 
-function addIncomingMessage(msgInfo) {
+let openChatSenderId = null; // Currently open chat in modal
+
+/**
+ * Render or update a conversation item in the list.
+ * Only shows the latest message per sender.
+ */
+function renderConversationItem(convo) {
   const list = document.getElementById('messagesList');
   if (!list) return;
   if (list.querySelector('.text-dim')) list.innerHTML = '';
 
-  const id = `msg_${msgCounter++}`;
-  const time = msgInfo.date ? msgInfo.date.toLocaleTimeString() : new Date().toLocaleTimeString();
-  
-  // Sender type badge
+  const senderId = convo.senderId;
   const typeIcons = { User: '👤', Channel: '📢', Group: '👥' };
-  const typeIcon = typeIcons[msgInfo.senderType] || '💬';
-  const typeBadge = `<span class="sender-badge sender-${msgInfo.senderType.toLowerCase()}">${typeIcon} ${msgInfo.senderType}</span>`;
-  
-  // Message preview (truncate long text)
-  const preview = msgInfo.text 
-    ? (msgInfo.text.length > 150 ? msgInfo.text.slice(0, 150) + '...' : msgInfo.text)
-    : (msgInfo.hasMedia ? '📎 [Media]' : '[Empty]');
+  const typeIcon = typeIcons[convo.senderType] || '💬';
+  const preview = convo.lastMessagePreview || '[Empty]';
+  const time = convo.lastMessageDate ? new Date(convo.lastMessageDate).toLocaleTimeString() : '';
+  const msgCount = convo.messages ? convo.messages.length : 0;
 
-  const item = document.createElement('div');
-  item.className = 'msg-item';
-  item.id = id;
+  // Check if item already exists — update it
+  let item = document.getElementById(`convo_${senderId}`);
+  if (item) {
+    item.querySelector('.msg-text').textContent = preview.length > 120 ? preview.slice(0, 120) + '...' : preview;
+    item.querySelector('.msg-time').textContent = time;
+    const countEl = item.querySelector('.msg-count');
+    if (countEl) countEl.textContent = `${msgCount} msgs`;
+    // Move to top
+    list.prepend(item);
+    return;
+  }
+
+  // Create new conversation item
+  item = document.createElement('div');
+  item.className = 'msg-item convo-item';
+  item.id = `convo_${senderId}`;
   item.innerHTML = `
     <div class="msg-sender">
-      ${typeBadge}
-      <span class="msg-sender-name">${escapeHtml(msgInfo.senderName)}</span>
+      <span class="sender-badge sender-${(convo.senderType || 'user').toLowerCase()}">${typeIcon} ${convo.senderType || 'User'}</span>
+      <span class="msg-sender-name">${escapeHtml(convo.senderName || 'Unknown')}</span>
+      <span class="msg-count text-dim">${msgCount} msgs</span>
       <span class="msg-time">${time}</span>
     </div>
-    <div class="msg-text">${escapeHtml(preview)}</div>
-    ${msgInfo.hasMedia ? '<div class="msg-media-badge">📎 Has attachment</div>' : ''}
-    <div class="msg-actions">
-      <button class="btn-outline btn-sm msg-reply-btn">💬 Reply</button>
-    </div>
+    <div class="msg-text">${escapeHtml(preview.length > 120 ? preview.slice(0, 120) + '...' : preview)}</div>
   `;
 
-  // Store msgInfo for reply
-  item._msgInfo = msgInfo;
-  item.querySelector('.msg-reply-btn').addEventListener('click', () => openReplyModal(msgInfo));
-
+  // Click to open full chat
+  item.addEventListener('click', () => openChatModal(convo));
   list.prepend(item);
-
-  // Persist to IndexedDB
-  saveMessage(msgInfo).catch(() => {});
 }
 
-// ===== Reply Modal =====
-let currentReplyTarget = null;
+/**
+ * Called when a new message arrives. Groups by sender, updates the conversation item.
+ */
+async function addIncomingMessage(msgInfo) {
+  // Save to conversation in IndexedDB
+  const convo = await addMessageToConversation(msgInfo);
+  if (convo) {
+    renderConversationItem(convo);
+  }
 
-function openReplyModal(msgInfo) {
-  currentReplyTarget = msgInfo;
-  
+  // If chat popup is open for this sender, add the message in real-time
+  if (openChatSenderId === msgInfo.senderId) {
+    appendMessageToChatPopup({
+      text: msgInfo.text || '',
+      hasMedia: msgInfo.hasMedia,
+      date: msgInfo.date instanceof Date ? msgInfo.date.toISOString() : msgInfo.date,
+      fromBot: false,
+    });
+  }
+}
+
+// ===== Chat Popup (full conversation) =====
+let currentChatConvo = null;
+
+async function openChatModal(convo) {
+  currentChatConvo = convo;
+  openChatSenderId = convo.senderId;
+
   const modal = document.getElementById('replyModal');
   const title = document.getElementById('replyModalTitle');
-  const original = document.getElementById('replyOriginalMsg');
+  const originalBox = document.getElementById('replyOriginalMsg');
   const conversation = document.getElementById('replyConversation');
   const input = document.getElementById('replyInput');
 
-  title.textContent = `💬 Reply to ${msgInfo.senderName}`;
-  
-  const preview = msgInfo.text || (msgInfo.hasMedia ? '📎 [Media]' : '[Empty]');
-  original.innerHTML = `
-    <div class="reply-original-sender">${escapeHtml(msgInfo.senderName)}</div>
-    <div class="reply-original-text">${escapeHtml(preview)}</div>
-  `;
+  title.textContent = `💬 ${convo.senderName || 'Chat'}`;
+  originalBox.innerHTML = ''; // No single message quote — full conversation
 
-  conversation.innerHTML = ''; // Clear previous conversation
+  // Load full conversation from DB
+  const freshConvo = await getConversation(convo.senderId);
+  const messages = freshConvo?.messages || convo.messages || [];
+
+  // Render all messages
+  conversation.innerHTML = '';
+  for (const msg of messages) {
+    appendMessageToChatPopup(msg);
+  }
+
   input.value = '';
   modal.classList.remove('hidden');
   input.focus();
+
+  // Scroll to bottom
+  setTimeout(() => { conversation.scrollTop = conversation.scrollHeight; }, 50);
+}
+
+function appendMessageToChatPopup(msg) {
+  const conversation = document.getElementById('replyConversation');
+  if (!conversation) return;
+
+  const time = msg.date ? new Date(msg.date).toLocaleTimeString() : '';
+  const div = document.createElement('div');
+
+  if (msg.fromBot) {
+    // Our reply (right-aligned)
+    div.className = 'reply-sent';
+    div.innerHTML = `
+      <div class="reply-sent-text">${escapeHtml(msg.text)}</div>
+      <div class="reply-sent-time">${time}</div>
+    `;
+  } else {
+    // Their message (left-aligned)
+    div.className = 'reply-received';
+    const content = msg.text || (msg.hasMedia ? '📎 Photo/Media' : '[Empty]');
+    div.innerHTML = `
+      <div class="reply-received-text">${escapeHtml(content)}</div>
+      <div class="reply-received-time">${time}</div>
+    `;
+  }
+
+  conversation.appendChild(div);
+  conversation.scrollTop = conversation.scrollHeight;
 }
 
 function closeReplyModal() {
   document.getElementById('replyModal').classList.add('hidden');
-  currentReplyTarget = null;
+  currentChatConvo = null;
+  openChatSenderId = null;
 }
 
 async function handleSendReply() {
-  if (!currentReplyTarget || !downloader || !isConnected) return;
+  if (!currentChatConvo || !downloader || !isConnected) return;
 
   const input = document.getElementById('replyInput');
   const text = input.value.trim();
@@ -606,18 +645,31 @@ async function handleSendReply() {
   btn.innerHTML = '⏳';
 
   try {
-    await downloader.sendMessage(currentReplyTarget.chatPeer, text, currentReplyTarget.id);
-    
-    // Add sent message to conversation
-    const conversation = document.getElementById('replyConversation');
-    const sent = document.createElement('div');
-    sent.className = 'reply-sent';
-    sent.innerHTML = `
-      <div class="reply-sent-text">${escapeHtml(text)}</div>
-      <div class="reply-sent-time">${new Date().toLocaleTimeString()}</div>
-    `;
-    conversation.appendChild(sent);
-    conversation.scrollTop = conversation.scrollHeight;
+    // Reconstruct chatPeer from stored data
+    let chatPeer;
+    if (currentChatConvo.chatPeerType === 'channel') {
+      chatPeer = { channelId: currentChatConvo.chatPeerId };
+    } else if (currentChatConvo.chatPeerType === 'chat') {
+      chatPeer = { chatId: currentChatConvo.chatPeerId };
+    } else {
+      chatPeer = { userId: currentChatConvo.chatPeerId };
+    }
+
+    await downloader.sendMessage(chatPeer, text);
+
+    // Save our reply to DB
+    await addBotReplyToConversation(currentChatConvo.senderId, text);
+
+    // Show in popup
+    appendMessageToChatPopup({
+      text,
+      date: new Date().toISOString(),
+      fromBot: true,
+    });
+
+    // Update conversation item preview
+    const freshConvo = await getConversation(currentChatConvo.senderId);
+    if (freshConvo) renderConversationItem(freshConvo);
 
     input.value = '';
     input.focus();

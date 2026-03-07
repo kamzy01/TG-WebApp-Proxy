@@ -587,6 +587,45 @@ button:disabled {
   width: auto !important;
 }
 
+/* Received messages (left-aligned in chat popup) */
+.reply-received {
+  background: var(--surface-2);
+  border-radius: 12px 12px 12px 4px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  margin-right: 40px;
+  max-width: 80%;
+  clear: both;
+}
+
+.reply-received-text {
+  font-size: 0.88rem;
+  color: var(--text);
+  word-break: break-word;
+}
+
+.reply-received-time {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  margin-top: 4px;
+}
+
+/* Conversation items — clickable */
+.convo-item {
+  cursor: pointer;
+}
+
+.convo-item:hover {
+  border-color: var(--primary) !important;
+  background: rgba(0, 136, 204, 0.05);
+}
+
+.msg-count {
+  font-size: 0.72rem;
+  margin-left: auto;
+  margin-right: 8px;
+}
+
 /* ===== Responsive ===== */
 @media (max-width: 600px) {
   .form-row {
