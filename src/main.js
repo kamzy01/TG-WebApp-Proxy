@@ -71,6 +71,7 @@ function renderApp(hasSavedCreds) {
         <div class="flex-between">
           <span class="text-dim">🔑 Credentials saved</span>
           <div style="display: flex; gap: 8px;">
+            <button class="btn-danger btn-sm" id="btnDisconnect" style="display:none;">🔌 Disconnect</button>
             <button class="btn-outline btn-sm" id="btnShowCreds">Edit</button>
             <button class="btn-outline btn-sm" id="btnClearSession" title="Clear saved session">🗑️ Clear</button>
           </div>
@@ -261,6 +262,8 @@ function bindEvents() {
     document.getElementById('logContainer').innerHTML = '';
   });
   document.getElementById('btnClearSession').addEventListener('click', handleClearSession);
+  const btnDisconnect = document.getElementById('btnDisconnect');
+  if (btnDisconnect) btnDisconnect.addEventListener('click', handleDisconnect);
   const btnShowCreds = document.getElementById('btnShowCreds');
   if (btnShowCreds) btnShowCreds.addEventListener('click', () => {
     document.getElementById('credsForm').classList.toggle('hidden');
@@ -295,6 +298,16 @@ function bindEvents() {
       document.getElementById('btnFetchInfo').disabled = true;
     }
   });
+}
+
+// ===== Disconnect Handler (saved-creds mode) =====
+async function handleDisconnect() {
+  if (downloader) {
+    await downloader.disconnect();
+  }
+  isConnected = false;
+  setConnectionStatus('disconnected');
+  addLog('info', 'Disconnected manually.');
 }
 
 // ===== Auto Reconnect =====
@@ -730,6 +743,12 @@ function setConnectionStatus(status) {
   const text = document.getElementById('statusText');
   badge.className = `status-badge ${status}`;
   text.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+  
+  // Show/hide disconnect button in saved-creds mode
+  const btnDisconnect = document.getElementById('btnDisconnect');
+  if (btnDisconnect) {
+    btnDisconnect.style.display = status === 'connected' ? '' : 'none';
+  }
 }
 
 function addLog(type, message) {
