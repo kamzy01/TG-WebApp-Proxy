@@ -626,6 +626,52 @@ button:disabled {
   margin-right: 8px;
 }
 
+/* Clickable messages in chat popup */
+.clickable-msg {
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.clickable-msg:hover {
+  background: rgba(0, 136, 204, 0.1) !important;
+}
+
+/* Reply-to quote bar above input */
+.reply-quote-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: var(--surface-2);
+  border-left: 3px solid var(--primary);
+  border-radius: 0 8px 8px 0;
+  padding: 6px 10px;
+}
+
+.reply-quote-text {
+  font-size: 0.78rem;
+  color: var(--primary);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reply-quote-cancel {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 2px 6px;
+  min-width: auto;
+  width: auto !important;
+}
+
+.reply-quote-cancel:hover {
+  color: var(--danger);
+}
+
 /* ===== Responsive ===== */
 @media (max-width: 600px) {
   .form-row {

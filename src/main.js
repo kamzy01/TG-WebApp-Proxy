@@ -567,6 +567,7 @@ async function addIncomingMessage(msgInfo) {
 
 // ===== Chat Popup (full conversation) =====
 let currentChatConvo = null;
+let replyToMsgId = null; // When clicking a message to reply to it
 
 async function openChatModal(convo) {
   currentChatConvo = convo;
@@ -614,23 +615,44 @@ function appendMessageToChatPopup(msg) {
       <div class="reply-sent-time">${time}</div>
     `;
   } else {
-    // Their message (left-aligned)
-    div.className = 'reply-received';
+    // Their message (left-aligned, clickable to reply-to)
+    div.className = 'reply-received clickable-msg';
     const content = msg.text || (msg.hasMedia ? '📎 Photo/Media' : '[Empty]');
     div.innerHTML = `
       <div class="reply-received-text">${escapeHtml(content)}</div>
-      <div class="reply-received-time">${time}</div>
+      <div class="reply-received-time">${time} • tap to reply ↩</div>
     `;
+    div.addEventListener('click', () => {
+      setReplyTo(msg.id, content);
+    });
   }
 
   conversation.appendChild(div);
   conversation.scrollTop = conversation.scrollHeight;
 }
 
+function setReplyTo(msgId, preview) {
+  replyToMsgId = msgId;
+  const quoteBox = document.getElementById('replyOriginalMsg');
+  if (quoteBox) {
+    quoteBox.innerHTML = `
+      <div class="reply-quote-bar">
+        <span class="reply-quote-text">↩ Replying to: ${escapeHtml(preview.length > 80 ? preview.slice(0, 80) + '...' : preview)}</span>
+        <button class="reply-quote-cancel" onclick="document.getElementById('replyOriginalMsg').innerHTML=''; window._clearReplyTo && window._clearReplyTo();">✕</button>
+      </div>
+    `;
+  }
+  document.getElementById('replyInput')?.focus();
+}
+
+// Expose clearReplyTo globally for inline onclick
+window._clearReplyTo = () => { replyToMsgId = null; };
+
 function closeReplyModal() {
   document.getElementById('replyModal').classList.add('hidden');
   currentChatConvo = null;
   openChatSenderId = null;
+  replyToMsgId = null;
 }
 
 async function handleSendReply() {
@@ -655,7 +677,11 @@ async function handleSendReply() {
       chatPeer = { userId: currentChatConvo.chatPeerId };
     }
 
-    await downloader.sendMessage(chatPeer, text);
+    await downloader.sendMessage(chatPeer, text, replyToMsgId || undefined);
+
+    // Clear reply-to state
+    replyToMsgId = null;
+    document.getElementById('replyOriginalMsg').innerHTML = '';
 
     // Save our reply to DB
     await addBotReplyToConversation(currentChatConvo.senderId, text);
