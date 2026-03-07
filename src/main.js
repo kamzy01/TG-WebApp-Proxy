@@ -1,6 +1,7 @@
 /**
  * Telegram File Downloader - Client-Side MTProto
  * Two-step flow: Fetch file info (cached) → Download with parallel connections
+ * + Incoming messages with reply popup
  */
 
 import './polyfills.js';
@@ -12,7 +13,7 @@ import { parseTelegramLink, describeParsedLink, formatFileSize, getFileIcon } fr
 let downloader = null;
 let isConnected = false;
 let isDownloading = false;
-let currentFileRef = null; // Cached file reference
+let currentFileRef = null;
 
 // ===== Initialize UI =====
 function init() {
@@ -53,7 +54,6 @@ function renderApp() {
           <span id="statusText">Disconnected</span>
         </span>
       </div>
-
       <div class="form-row">
         <div class="form-group">
           <label for="apiId">API ID</label>
@@ -64,17 +64,14 @@ function renderApp() {
           <input type="password" id="apiHash" placeholder="abc123def456..." autocomplete="off" />
         </div>
       </div>
-
       <div class="form-group">
         <label for="botToken">Bot Token</label>
         <input type="password" id="botToken" placeholder="123456789:ABCdefGHIjklMNOpqrsTUVwxyz" autocomplete="off" />
       </div>
-
       <p class="hint">
         Get API ID & Hash from <a href="https://my.telegram.org" target="_blank" style="color: var(--primary)">my.telegram.org</a> → 
         API Development Tools. Bot token from <a href="https://t.me/BotFather" target="_blank" style="color: var(--primary)">@BotFather</a>.
       </p>
-
       <div class="mt-16" style="display: flex; gap: 8px;">
         <button class="btn-primary" id="btnConnect" style="flex: 1;">⚡ Connect</button>
         <button class="btn-outline btn-sm" id="btnClearSession" title="Clear saved session">🗑️</button>
@@ -84,26 +81,16 @@ function renderApp() {
     <!-- Download Card -->
     <div class="card" id="downloadCard">
       <h2><span class="icon">📥</span> Download File</h2>
-
       <div class="form-group">
         <label for="messageLink">Telegram Message Link</label>
         <input type="text" id="messageLink" placeholder="https://t.me/c/2113604672/730 or https://t.me/channel/123" />
       </div>
-
       <div id="parsedLinkInfo" class="hidden">
         <p class="text-dim" id="parsedLinkText"></p>
       </div>
-
-      <!-- Step 1: Fetch Info -->
-      <button class="btn-primary mt-12" id="btnFetchInfo" disabled>
-        🔍 Fetch File Info
-      </button>
-
-      <!-- File Info (shown after fetch) -->
+      <button class="btn-primary mt-12" id="btnFetchInfo" disabled>🔍 Fetch File Info</button>
       <div id="fileInfoBox" class="hidden">
         <dl class="file-info" id="fileInfoContent"></dl>
-        
-        <!-- Step 2: Download with parallel connections -->
         <div class="mt-16" style="display: flex; gap: 8px; align-items: center;">
           <div class="form-group" style="margin-bottom: 0; flex: 0 0 auto;">
             <label for="connections" style="margin-bottom: 4px;">Connections</label>
@@ -116,24 +103,42 @@ function renderApp() {
               <option value="8">8 (Max)</option>
             </select>
           </div>
-          <button class="btn-success" id="btnDownload" style="flex: 1; margin-top: 18px;">
-            📥 Download
-          </button>
+          <button class="btn-success" id="btnDownload" style="flex: 1; margin-top: 18px;">📥 Download</button>
         </div>
       </div>
-
-      <!-- Progress -->
       <div id="progressBox" class="hidden">
         <div class="progress-container">
-          <div class="progress-bar-bg">
-            <div class="progress-bar-fill" id="progressBar"></div>
-          </div>
+          <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressBar"></div></div>
           <div class="progress-info">
             <span id="progressPercent">0%</span>
             <span id="progressSpeed">--</span>
             <span id="progressEta">--</span>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Incoming Messages -->
+    <div class="card" id="messagesCard">
+      <div class="flex-between mb-8">
+        <h2><span class="icon">💬</span> Incoming Messages</h2>
+        <span class="text-dim" id="msgListeningStatus">Not listening</span>
+      </div>
+      <p class="hint mb-8">Messages sent to your bot appear here. Click to reply.</p>
+      <div id="messagesList">
+        <p class="text-dim">No messages yet.</p>
+      </div>
+    </div>
+
+    <!-- Incoming Files -->
+    <div class="card" id="incomingCard">
+      <div class="flex-between mb-8">
+        <h2><span class="icon">📨</span> Incoming Files</h2>
+        <span class="text-dim" id="listeningStatus">Not listening</span>
+      </div>
+      <p class="hint mb-8">Send files to your bot — they appear here for download.</p>
+      <div id="incomingList">
+        <p class="text-dim">No incoming files yet.</p>
       </div>
     </div>
 
@@ -146,23 +151,29 @@ function renderApp() {
       <div class="log-container" id="logContainer"></div>
     </div>
 
-    <!-- Incoming Files (live from bot) -->
-    <div class="card" id="incomingCard">
-      <div class="flex-between mb-8">
-        <h2><span class="icon">📨</span> Incoming Files</h2>
-        <span class="text-dim" id="listeningStatus">Not listening</span>
-      </div>
-      <p class="hint mb-8">Send files to your bot — they appear here automatically for download.</p>
-      <div id="incomingList">
-        <p class="text-dim">No incoming files yet. Send a file to the bot to see it here.</p>
-      </div>
-    </div>
-
     <!-- Download History -->
     <div class="card" id="historyCard">
       <h2><span class="icon">📜</span> Download History</h2>
       <div id="historyList">
         <p class="text-dim">No downloads yet.</p>
+      </div>
+    </div>
+
+    <!-- Reply Popup Modal -->
+    <div id="replyModal" class="modal-overlay hidden">
+      <div class="modal">
+        <div class="modal-header">
+          <h3 id="replyModalTitle">💬 Reply</h3>
+          <button class="btn-outline btn-sm" id="btnCloseModal">✕</button>
+        </div>
+        <div class="modal-body">
+          <div id="replyOriginalMsg" class="reply-original"></div>
+          <div id="replyConversation" class="reply-conversation"></div>
+          <div class="reply-input-row">
+            <input type="text" id="replyInput" placeholder="Type your reply..." />
+            <button class="btn-primary btn-sm" id="btnSendReply">Send</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -183,18 +194,23 @@ function bindEvents() {
     document.getElementById('logContainer').innerHTML = '';
   });
   document.getElementById('btnClearSession').addEventListener('click', handleClearSession);
+  document.getElementById('btnCloseModal').addEventListener('click', closeReplyModal);
+  document.getElementById('btnSendReply').addEventListener('click', handleSendReply);
+  document.getElementById('replyInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendReply(); }
+  });
+  document.getElementById('replyModal').addEventListener('click', (e) => {
+    if (e.target.id === 'replyModal') closeReplyModal();
+  });
   
   document.getElementById('messageLink').addEventListener('input', (e) => {
     const parsed = parseTelegramLink(e.target.value);
     const infoEl = document.getElementById('parsedLinkInfo');
     const textEl = document.getElementById('parsedLinkText');
-    
-    // Reset file info and progress when link changes
     currentFileRef = null;
     document.getElementById('fileInfoBox').classList.add('hidden');
     document.getElementById('progressBox').classList.add('hidden');
     resetProgress();
-    
     if (parsed) {
       infoEl.classList.remove('hidden');
       textEl.textContent = '✅ ' + describeParsedLink(parsed);
@@ -216,7 +232,6 @@ async function autoReconnect(saved) {
   btn.disabled = true;
   btn.innerHTML = '⏳ Reconnecting...';
   setConnectionStatus('connecting');
-
   try {
     downloader = new TGDownloader(addLog, updateProgress);
     await downloader.connect(saved.apiId, saved.apiHash, saved.botToken);
@@ -224,11 +239,9 @@ async function autoReconnect(saved) {
     setConnectionStatus('connected');
     btn.innerHTML = '🔌 Disconnect';
     btn.className = 'btn-danger';
-    startFileListener();
+    startListeners();
     const link = document.getElementById('messageLink').value.trim();
-    if (parseTelegramLink(link)) {
-      document.getElementById('btnFetchInfo').disabled = false;
-    }
+    if (parseTelegramLink(link)) document.getElementById('btnFetchInfo').disabled = false;
   } catch (error) {
     setConnectionStatus('disconnected');
     btn.innerHTML = '⚡ Connect';
@@ -241,7 +254,6 @@ async function autoReconnect(saved) {
 // ===== Connection Handler =====
 async function handleConnect() {
   const btn = document.getElementById('btnConnect');
-  
   if (isConnected && downloader) {
     await downloader.disconnect();
     setConnectionStatus('disconnected');
@@ -251,20 +263,14 @@ async function handleConnect() {
     document.getElementById('btnFetchInfo').disabled = true;
     return;
   }
-
   const apiId = document.getElementById('apiId').value.trim();
   const apiHash = document.getElementById('apiHash').value.trim();
   const botToken = document.getElementById('botToken').value.trim();
-
-  if (!apiId || !apiHash || !botToken) {
-    addLog('error', 'Please fill in all credentials.');
-    return;
-  }
+  if (!apiId || !apiHash || !botToken) { addLog('error', 'Please fill in all credentials.'); return; }
 
   btn.disabled = true;
   btn.innerHTML = '⏳ Connecting...';
   setConnectionStatus('connecting');
-
   try {
     downloader = new TGDownloader(addLog, updateProgress);
     await downloader.connect(apiId, apiHash, botToken);
@@ -272,11 +278,9 @@ async function handleConnect() {
     setConnectionStatus('connected');
     btn.innerHTML = '🔌 Disconnect';
     btn.className = 'btn-danger';
-    startFileListener();
+    startListeners();
     const link = document.getElementById('messageLink').value.trim();
-    if (parseTelegramLink(link)) {
-      document.getElementById('btnFetchInfo').disabled = false;
-    }
+    if (parseTelegramLink(link)) document.getElementById('btnFetchInfo').disabled = false;
   } catch (error) {
     setConnectionStatus('disconnected');
     btn.innerHTML = '⚡ Connect';
@@ -286,10 +290,28 @@ async function handleConnect() {
   }
 }
 
+// ===== Listeners =====
+let listenersStarted = false;
+
+function startListeners() {
+  if (listenersStarted || !downloader || !isConnected) return;
+  listenersStarted = true;
+
+  const fileStatus = document.getElementById('listeningStatus');
+  const msgStatus = document.getElementById('msgListeningStatus');
+  if (fileStatus) fileStatus.textContent = '🟢 Listening';
+  if (msgStatus) msgStatus.textContent = '🟢 Listening';
+
+  // File listener (media only)
+  downloader.startListening((fileRef) => addIncomingFile(fileRef));
+
+  // Message listener (all messages)
+  downloader.startMessageListener((msgInfo) => addIncomingMessage(msgInfo));
+}
+
 // ===== Step 1: Fetch File Info =====
 async function handleFetchInfo() {
   if (!isConnected || !downloader) return;
-
   const linkInput = document.getElementById('messageLink').value.trim();
   const parsed = parseTelegramLink(linkInput);
   if (!parsed) { addLog('error', 'Invalid Telegram link.'); return; }
@@ -297,23 +319,11 @@ async function handleFetchInfo() {
   const btn = document.getElementById('btnFetchInfo');
   btn.disabled = true;
   btn.innerHTML = '⏳ Fetching...';
-
   try {
-    let chatId;
-    if (parsed.type === 'public') {
-      chatId = parsed.username;
-    } else {
-      chatId = parsed.fullChannelId.toString();
-    }
-
+    const chatId = parsed.type === 'public' ? parsed.username : parsed.fullChannelId.toString();
     addLog('info', `Resolving: ${describeParsedLink(parsed)}`);
-    
-    // Fetch file info (cached by link)
     currentFileRef = await downloader.fetchFileInfo(chatId, parsed.messageId, linkInput);
-
-    // Show file info + download button
     showFileInfo(currentFileRef);
-
     btn.innerHTML = '✅ File info loaded';
     setTimeout(() => { btn.innerHTML = '🔍 Fetch File Info'; }, 2000);
   } catch (error) {
@@ -328,32 +338,20 @@ async function handleFetchInfo() {
 // ===== Step 2: Download =====
 async function handleDownload() {
   if (!isConnected || !downloader || isDownloading || !currentFileRef) return;
-
   const connections = parseInt(document.getElementById('connections').value) || 4;
   const btn = document.getElementById('btnDownload');
   const progressBox = document.getElementById('progressBox');
-  
   btn.disabled = true;
   btn.innerHTML = '⏳ Downloading...';
   isDownloading = true;
   progressBox.classList.remove('hidden');
   resetProgress();
-
   try {
-    // Download using cached fileRef — no re-fetch needed!
     const { blob, fileInfo } = await downloader.downloadFile(currentFileRef, connections);
-
-    // Save to device
     downloader.saveBlobAs(blob, fileInfo.fileName);
     addToHistory(fileInfo);
-
     btn.innerHTML = '✅ Done!';
-    // Hide progress after a brief moment to show 100%
-    setTimeout(() => {
-      btn.innerHTML = '📥 Download';
-      progressBox.classList.add('hidden');
-      resetProgress();
-    }, 3000);
+    setTimeout(() => { btn.innerHTML = '📥 Download'; progressBox.classList.add('hidden'); resetProgress(); }, 3000);
   } catch (error) {
     addLog('error', `Download failed: ${error.message}`);
     btn.innerHTML = '📥 Download';
@@ -365,28 +363,12 @@ async function handleDownload() {
   }
 }
 
-// ===== Incoming File Listener =====
-let listenerStarted = false;
-
-function startFileListener() {
-  if (listenerStarted || !downloader || !isConnected) return;
-  listenerStarted = true;
-
-  const statusEl = document.getElementById('listeningStatus');
-  if (statusEl) statusEl.textContent = '🟢 Listening';
-
-  downloader.startListening((fileRef) => {
-    addIncomingFile(fileRef);
-  });
-}
-
+// ===== Incoming Files (fixed layout: download below) =====
 let incomingCounter = 0;
 
 function addIncomingFile(fileRef) {
   const list = document.getElementById('incomingList');
   if (!list) return;
-
-  // Clear placeholder
   if (list.querySelector('.text-dim')) list.innerHTML = '';
 
   const id = `incoming_${incomingCounter++}`;
@@ -394,25 +376,19 @@ function addIncomingFile(fileRef) {
   const time = fileRef.date ? fileRef.date.toLocaleTimeString() : new Date().toLocaleTimeString();
 
   const item = document.createElement('div');
-  item.className = 'history-item';
+  item.className = 'incoming-file-item';
   item.id = id;
   item.innerHTML = `
-    <span class="file-icon">${icon}</span>
-    <div class="file-details" style="flex: 1; min-width: 0;">
-      <div class="file-name">${fileRef.fileName}</div>
-      <div class="file-meta">${formatFileSize(fileRef.fileSize)} • ${fileRef.mimeType || 'Unknown'} • ${fileRef.chatName || ''} • ${time}</div>
+    <div class="incoming-file-header">
+      <span class="file-icon">${icon}</span>
+      <div class="file-details">
+        <div class="file-name">${fileRef.fileName}</div>
+        <div class="file-meta">${formatFileSize(fileRef.fileSize)} • ${fileRef.mimeType || 'Unknown'} • ${fileRef.chatName || ''} • ${time}</div>
+      </div>
     </div>
-    <button class="btn-success btn-sm" data-incoming-id="${id}" style="flex-shrink: 0;">
-      📥 Download
-    </button>
+    <button class="btn-success btn-sm incoming-dl-btn">📥 Download</button>
   `;
-
-  // Store fileRef on the element for retrieval
-  item._fileRef = fileRef;
-
-  // Bind download button
   item.querySelector('button').addEventListener('click', () => handleIncomingDownload(item, fileRef));
-
   list.prepend(item);
 }
 
@@ -421,30 +397,21 @@ async function handleIncomingDownload(itemEl, fileRef) {
     addLog('warn', 'Cannot download: busy or disconnected.');
     return;
   }
-
   const btn = itemEl.querySelector('button');
   const connections = parseInt(document.getElementById('connections')?.value) || 4;
-
   btn.disabled = true;
   btn.innerHTML = '⏳ ...';
   isDownloading = true;
-
-  // Show progress
   const progressBox = document.getElementById('progressBox');
   progressBox.classList.remove('hidden');
   resetProgress();
-
   try {
     const { blob, fileInfo } = await downloader.downloadFile(fileRef, connections);
     downloader.saveBlobAs(blob, fileInfo.fileName);
     addToHistory(fileInfo);
-
     btn.innerHTML = '✅ Done';
-    btn.className = 'btn-outline btn-sm';
-    setTimeout(() => {
-      progressBox.classList.add('hidden');
-      resetProgress();
-    }, 2000);
+    btn.className = 'btn-outline btn-sm incoming-dl-btn';
+    setTimeout(() => { progressBox.classList.add('hidden'); resetProgress(); }, 2000);
   } catch (error) {
     addLog('error', `Download failed: ${error.message}`);
     btn.innerHTML = '📥 Retry';
@@ -453,6 +420,116 @@ async function handleIncomingDownload(itemEl, fileRef) {
     resetProgress();
   } finally {
     isDownloading = false;
+  }
+}
+
+// ===== Incoming Messages =====
+let msgCounter = 0;
+
+function addIncomingMessage(msgInfo) {
+  const list = document.getElementById('messagesList');
+  if (!list) return;
+  if (list.querySelector('.text-dim')) list.innerHTML = '';
+
+  const id = `msg_${msgCounter++}`;
+  const time = msgInfo.date ? msgInfo.date.toLocaleTimeString() : new Date().toLocaleTimeString();
+  
+  // Sender type badge
+  const typeIcons = { User: '👤', Channel: '📢', Group: '👥' };
+  const typeIcon = typeIcons[msgInfo.senderType] || '💬';
+  const typeBadge = `<span class="sender-badge sender-${msgInfo.senderType.toLowerCase()}">${typeIcon} ${msgInfo.senderType}</span>`;
+  
+  // Message preview (truncate long text)
+  const preview = msgInfo.text 
+    ? (msgInfo.text.length > 150 ? msgInfo.text.slice(0, 150) + '...' : msgInfo.text)
+    : (msgInfo.hasMedia ? '📎 [Media]' : '[Empty]');
+
+  const item = document.createElement('div');
+  item.className = 'msg-item';
+  item.id = id;
+  item.innerHTML = `
+    <div class="msg-sender">
+      ${typeBadge}
+      <span class="msg-sender-name">${escapeHtml(msgInfo.senderName)}</span>
+      <span class="msg-time">${time}</span>
+    </div>
+    <div class="msg-text">${escapeHtml(preview)}</div>
+    ${msgInfo.hasMedia ? '<div class="msg-media-badge">📎 Has attachment</div>' : ''}
+    <div class="msg-actions">
+      <button class="btn-outline btn-sm msg-reply-btn">💬 Reply</button>
+    </div>
+  `;
+
+  // Store msgInfo for reply
+  item._msgInfo = msgInfo;
+  item.querySelector('.msg-reply-btn').addEventListener('click', () => openReplyModal(msgInfo));
+
+  list.prepend(item);
+}
+
+// ===== Reply Modal =====
+let currentReplyTarget = null;
+
+function openReplyModal(msgInfo) {
+  currentReplyTarget = msgInfo;
+  
+  const modal = document.getElementById('replyModal');
+  const title = document.getElementById('replyModalTitle');
+  const original = document.getElementById('replyOriginalMsg');
+  const conversation = document.getElementById('replyConversation');
+  const input = document.getElementById('replyInput');
+
+  title.textContent = `💬 Reply to ${msgInfo.senderName}`;
+  
+  const preview = msgInfo.text || (msgInfo.hasMedia ? '📎 [Media]' : '[Empty]');
+  original.innerHTML = `
+    <div class="reply-original-sender">${escapeHtml(msgInfo.senderName)}</div>
+    <div class="reply-original-text">${escapeHtml(preview)}</div>
+  `;
+
+  conversation.innerHTML = ''; // Clear previous conversation
+  input.value = '';
+  modal.classList.remove('hidden');
+  input.focus();
+}
+
+function closeReplyModal() {
+  document.getElementById('replyModal').classList.add('hidden');
+  currentReplyTarget = null;
+}
+
+async function handleSendReply() {
+  if (!currentReplyTarget || !downloader || !isConnected) return;
+
+  const input = document.getElementById('replyInput');
+  const text = input.value.trim();
+  if (!text) return;
+
+  const btn = document.getElementById('btnSendReply');
+  btn.disabled = true;
+  btn.innerHTML = '⏳';
+
+  try {
+    await downloader.sendMessage(currentReplyTarget.chatPeer, text, currentReplyTarget.id);
+    
+    // Add sent message to conversation
+    const conversation = document.getElementById('replyConversation');
+    const sent = document.createElement('div');
+    sent.className = 'reply-sent';
+    sent.innerHTML = `
+      <div class="reply-sent-text">${escapeHtml(text)}</div>
+      <div class="reply-sent-time">${new Date().toLocaleTimeString()}</div>
+    `;
+    conversation.appendChild(sent);
+    conversation.scrollTop = conversation.scrollHeight;
+
+    input.value = '';
+    input.focus();
+  } catch (error) {
+    addLog('error', `Reply failed: ${error.message}`);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = 'Send';
   }
 }
 
@@ -468,6 +545,12 @@ function handleClearSession() {
 }
 
 // ===== UI Helpers =====
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
 function setConnectionStatus(status) {
   const badge = document.getElementById('statusBadge');
   const text = document.getElementById('statusText');
@@ -492,11 +575,9 @@ function updateProgress(progress) {
   const speed = document.getElementById('progressSpeed');
   const eta = document.getElementById('progressEta');
   if (!bar) return;
-  
   bar.style.width = `${progress.percent.toFixed(1)}%`;
   percent.textContent = `${progress.percent.toFixed(1)}%`;
   speed.textContent = `${formatFileSize(progress.speed)}/s`;
-  
   if (progress.remaining > 0 && progress.remaining < 86400) {
     const mins = Math.floor(progress.remaining / 60);
     const secs = Math.floor(progress.remaining % 60);
@@ -517,23 +598,19 @@ function resetProgress() {
 function showFileInfo(fileRef) {
   const box = document.getElementById('fileInfoBox');
   const content = document.getElementById('fileInfoContent');
-  
   content.innerHTML = `
     <dt>📄 File</dt><dd>${fileRef.fileName}</dd>
     <dt>📊 Size</dt><dd>${formatFileSize(fileRef.fileSize)}</dd>
     <dt>📎 Type</dt><dd>${fileRef.mimeType || 'Unknown'}</dd>
     <dt>🏢 DC</dt><dd>DC ${fileRef.dcId || '?'}</dd>
   `;
-  
   box.classList.remove('hidden');
 }
 
 function addToHistory(fileInfo) {
   const list = document.getElementById('historyList');
   const icon = getFileIcon(fileInfo.mimeType, fileInfo.fileName);
-  
   if (list.querySelector('.text-dim')) list.innerHTML = '';
-  
   const item = document.createElement('div');
   item.className = 'history-item';
   item.innerHTML = `
@@ -550,12 +627,10 @@ function addToHistory(fileInfo) {
 let reconnectTimer = null;
 
 function startConnectionWatcher() {
-  // Watch for browser going online/offline
   window.addEventListener('online', () => {
     addLog('info', '🌐 Internet restored. Reconnecting in 5s...');
     scheduleReconnect(5000);
   });
-
   window.addEventListener('offline', () => {
     addLog('warn', '📡 Internet lost. Waiting for connection...');
     setConnectionStatus('disconnected');
@@ -563,17 +638,9 @@ function startConnectionWatcher() {
     const btn = document.getElementById('btnConnect');
     if (btn) { btn.innerHTML = '⚡ Connect'; btn.className = 'btn-primary'; }
   });
-
-  // Periodic health check every 60s — if we lost connection silently, reconnect
   setInterval(async () => {
     if (!downloader || !navigator.onLine) return;
-    
-    if (isConnected && downloader.connected) {
-      // Everything seems fine
-      return;
-    }
-
-    // We think we're disconnected but internet is available — try to reconnect
+    if (isConnected && downloader.connected) return;
     if (navigator.onLine && downloader._credentials) {
       addLog('info', '🔄 Periodic check: reconnecting...');
       try {
@@ -582,11 +649,9 @@ function startConnectionWatcher() {
         setConnectionStatus('connected');
         const btn = document.getElementById('btnConnect');
         if (btn) { btn.innerHTML = '🔌 Disconnect'; btn.className = 'btn-danger'; }
-        startFileListener();
+        startListeners();
         addLog('success', '✅ Auto-reconnected successfully!');
-      } catch {
-        addLog('dim', 'Reconnect attempt failed. Will retry in 60s.');
-      }
+      } catch { addLog('dim', 'Reconnect attempt failed. Will retry in 60s.'); }
     }
   }, 60000);
 }
@@ -602,7 +667,7 @@ function scheduleReconnect(delayMs) {
       setConnectionStatus('connected');
       const btn = document.getElementById('btnConnect');
       if (btn) { btn.innerHTML = '🔌 Disconnect'; btn.className = 'btn-danger'; }
-      startFileListener();
+      startListeners();
       addLog('success', '✅ Reconnected after internet restored!');
     } catch (e) {
       addLog('warn', `Reconnect failed: ${e.message}. Retrying in 30s...`);

@@ -568,6 +568,114 @@ export class TGDownloader {
     this.onLog('success', '👂 Listening for incoming files...');
   }
 
+  /**
+   * Start listening for ALL incoming messages (text + media).
+   * Calls onMessage(msgInfo) for every message received.
+   */
+  startMessageListener(onMessage) {
+    if (!this.client || !this.connected) return;
+
+    this._onMessage = onMessage;
+
+    this.client.addEventHandler(async (event) => {
+      try {
+        const message = event.message;
+        if (!message) return;
+
+        // Determine sender type and name
+        let senderType = 'User';
+        let senderName = 'Unknown';
+        let senderId = null;
+        let chatPeer = null;
+
+        const peer = message.peerId;
+        if (peer) {
+          if (peer.channelId) {
+            senderType = 'Channel';
+            senderId = `-100${peer.channelId}`;
+            senderName = `Channel ${peer.channelId}`;
+            chatPeer = peer;
+          } else if (peer.chatId) {
+            senderType = 'Group';
+            senderId = `-${peer.chatId}`;
+            senderName = `Group ${peer.chatId}`;
+            chatPeer = peer;
+          } else if (peer.userId) {
+            senderType = 'User';
+            senderId = peer.userId.toString();
+            senderName = `User ${peer.userId}`;
+            chatPeer = peer;
+          }
+        }
+
+        // Try to resolve actual name
+        try {
+          if (message.sender) {
+            const s = message.sender;
+            if (s.firstName || s.lastName) {
+              senderName = [s.firstName, s.lastName].filter(Boolean).join(' ');
+            } else if (s.title) {
+              senderName = s.title;
+            }
+            if (s.username) {
+              senderName += ` (@${s.username})`;
+            }
+          }
+        } catch {}
+
+        const text = message.text || message.message || '';
+        const hasMedia = !!(message.media && (message.media.document || message.media.photo));
+
+        const msgInfo = {
+          id: message.id,
+          text,
+          senderType,
+          senderName,
+          senderId,
+          chatPeer,
+          hasMedia,
+          message, // raw GramJS message for download/reply
+          date: message.date ? new Date(message.date * 1000) : new Date(),
+        };
+
+        if (this._onMessage) {
+          this._onMessage(msgInfo);
+        }
+      } catch {}
+    }, new NewMessage({}));
+  }
+
+  /**
+   * Send a text message reply to a chat.
+   * @param {object} chatPeer - the peerId from the original message
+   * @param {string} text - reply text
+   * @param {number} replyToMsgId - optional message ID to reply to
+   */
+  async sendMessage(chatPeer, text, replyToMsgId) {
+    if (!this.client || !this.connected) {
+      throw new Error('Not connected.');
+    }
+
+    // Resolve entity from peer
+    let entity;
+    if (chatPeer.channelId) {
+      entity = await this.client.getEntity(BigInt(`-100${chatPeer.channelId}`));
+    } else if (chatPeer.chatId) {
+      entity = await this.client.getEntity(BigInt(`-${chatPeer.chatId}`));
+    } else if (chatPeer.userId) {
+      entity = await this.client.getEntity(BigInt(chatPeer.userId.toString()));
+    } else {
+      throw new Error('Invalid chat peer.');
+    }
+
+    await this.client.sendMessage(entity, {
+      message: text,
+      replyTo: replyToMsgId || undefined,
+    });
+
+    this.onLog('success', `✉️ Reply sent!`);
+  }
+
   // ===== HELPERS =====
 
   _finishDownload(buffer, fileRef, startTime) {
