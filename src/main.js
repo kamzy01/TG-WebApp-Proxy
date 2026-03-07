@@ -9,6 +9,7 @@ import './style.css';
 import { TGDownloader, getApi } from './telegram-client.js';
 import { parseTelegramLink, describeParsedLink, formatFileSize, getFileIcon } from './link-parser.js';
 import { initDB, addMessageToConversation, addBotReplyToConversation, getAllConversations, getConversation, saveFile, getAllFiles, markFileDownloaded, clearAllData, deleteConversation, clearConversations, clearFiles } from './db.js';
+import { getSettings, saveSettings, getChunkSizeOptions, getDefaults } from './settings.js';
 
 // ===== State =====
 let downloader = null;
@@ -174,7 +175,44 @@ function renderApp(hasSavedCreds) {
       </div>
     </div>
 
-    <!-- Log Card (fourth) -->
+    <!-- Settings Card -->
+    <div class="card" id="settingsCard">
+      <div class="flex-between mb-8">
+        <h2><span class="icon">⚙️</span> Settings</h2>
+        <button class="btn-outline btn-sm" id="btnResetSettings">Reset Defaults</button>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="settingsWorkers">Parallel Workers</label>
+          <input type="number" id="settingsWorkers" min="1" max="32" value="8" style="background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; color: var(--text); font-size: 0.95rem;" />
+          <p class="hint">1–32 parallel download connections (default: 8)</p>
+        </div>
+        <div class="form-group">
+          <label for="settingsChunkSize">Chunk Size</label>
+          <select id="settingsChunkSize" style="background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; color: var(--text); font-size: 0.95rem; width: 100%;">
+            <option value="65536">64 KB</option>
+            <option value="131072">128 KB</option>
+            <option value="262144">256 KB</option>
+            <option value="524288" selected>512 KB</option>
+            <option value="1048576">1 MB</option>
+          </select>
+          <p class="hint">MTProto chunk size per request (default: 512 KB)</p>
+        </div>
+      </div>
+      <div class="form-group" style="margin-top: 8px;">
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+          <input type="checkbox" id="settingsProxy" style="width: auto; accent-color: var(--primary);" />
+          <span>🌐 Enable Cloudflare Proxy</span>
+        </label>
+        <p class="hint">Route Telegram connections through /api/ proxy. Use when Telegram is blocked in your region. Requires Cloudflare Pages Functions deployment.</p>
+      </div>
+      <div class="mt-12">
+        <button class="btn-primary btn-sm" id="btnSaveSettings" style="width: auto;">💾 Save Settings</button>
+        <span class="text-dim" id="settingsSaveStatus" style="margin-left: 8px;"></span>
+      </div>
+    </div>
+
+    <!-- Log Card -->
     <div class="card">
       <div class="flex-between mb-8">
         <h2><span class="icon">📋</span> Log</h2>
@@ -401,6 +439,12 @@ function bindEvents() {
     if (e.target.id === 'replyModal') closeReplyModal();
   });
   
+  // Settings bindings
+  document.getElementById('btnSaveSettings').addEventListener('click', handleSaveSettings);
+  document.getElementById('btnResetSettings').addEventListener('click', handleResetSettings);
+  // Load saved settings into UI
+  loadSettingsUI();
+
   document.getElementById('messageLink').addEventListener('input', (e) => {
     const parsed = parseTelegramLink(e.target.value);
     const infoEl = document.getElementById('parsedLinkInfo');
@@ -1148,6 +1192,48 @@ function scheduleReconnect(delayMs) {
       scheduleReconnect(30000);
     }
   }, delayMs);
+}
+
+// ===== Settings Handlers =====
+function loadSettingsUI() {
+  const s = getSettings();
+  const workersEl = document.getElementById('settingsWorkers');
+  const chunkEl = document.getElementById('settingsChunkSize');
+  const proxyEl = document.getElementById('settingsProxy');
+  if (workersEl) workersEl.value = s.parallelWorkers || 8;
+  if (chunkEl) chunkEl.value = (s.chunkSize || 524288).toString();
+  if (proxyEl) proxyEl.checked = !!s.proxyEnabled;
+}
+
+function handleSaveSettings() {
+  const workers = parseInt(document.getElementById('settingsWorkers')?.value) || 8;
+  const chunkSize = parseInt(document.getElementById('settingsChunkSize')?.value) || 524288;
+  const proxyEnabled = !!document.getElementById('settingsProxy')?.checked;
+
+  const s = getSettings();
+  s.parallelWorkers = Math.min(Math.max(1, workers), 32);
+  s.chunkSize = chunkSize;
+  s.proxyEnabled = proxyEnabled;
+  saveSettings(s);
+
+  const status = document.getElementById('settingsSaveStatus');
+  if (status) {
+    status.textContent = '✅ Saved!';
+    setTimeout(() => { status.textContent = ''; }, 2000);
+  }
+  addLog('info', `⚙️ Settings saved: ${s.parallelWorkers} workers, ${formatFileSize(s.chunkSize)} chunks, proxy: ${s.proxyEnabled ? 'ON' : 'OFF'}`);
+}
+
+function handleResetSettings() {
+  const defaults = getDefaults();
+  saveSettings(defaults);
+  loadSettingsUI();
+  const status = document.getElementById('settingsSaveStatus');
+  if (status) {
+    status.textContent = '🔄 Reset to defaults';
+    setTimeout(() => { status.textContent = ''; }, 2000);
+  }
+  addLog('info', '⚙️ Settings reset to defaults.');
 }
 
 // ===== Boot =====

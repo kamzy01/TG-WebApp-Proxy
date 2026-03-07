@@ -19,8 +19,9 @@ export function getApi() {
   return Api;
 }
 
+import { getSettings } from './settings.js';
+
 const CREDENTIALS_KEY = 'tg_credentials';
-const MAX_CHUNK_SIZE = 512 * 1024; // 512KB - MTProto max per request
 const MIN_PARALLEL_SIZE = 1024 * 1024; // 1MB - minimum for parallel mode
 
 export class TGDownloader {
@@ -281,7 +282,7 @@ export class TGDownloader {
    * @param {object} fileRef - from fetchFileInfo()
    * @param {number} connections - parallel connections (1-8)
    */
-  async downloadFile(fileRef, connections = 1) {
+  async downloadFile(fileRef, connectionsOverride) {
     // Auto-reconnect if needed
     if (!this.connected || !this.client) {
       this.onLog('warn', 'Not connected. Attempting auto-reconnect...');
@@ -289,7 +290,10 @@ export class TGDownloader {
       if (!ok) throw new Error('Not connected and auto-reconnect failed.');
     }
 
-    connections = Math.min(Math.max(1, connections), 8);
+    // Read settings for workers (use override if provided, else settings)
+    const settings = getSettings();
+    let connections = connectionsOverride || settings.parallelWorkers || 8;
+    connections = Math.min(Math.max(1, connections), 32);
     const { fileSize, fileName, mimeType, fileLocation, dcId } = fileRef;
 
     // For small files or single connection, use simple download
@@ -340,6 +344,10 @@ export class TGDownloader {
     const { fileSize, fileLocation, dcId } = fileRef;
     const startTime = Date.now();
 
+    // Read chunk size from settings (auto-tuned or manual)
+    const dlSettings = getSettings();
+    const MAX_CHUNK_SIZE = (dlSettings.autoChunkSize && dlSettings.bestChunkSize) || dlSettings.chunkSize || 524288;
+
     // Calculate chunk distribution
     const totalChunks = Math.ceil(fileSize / MAX_CHUNK_SIZE);
     const actualConnections = Math.min(connections, totalChunks);
@@ -387,7 +395,8 @@ export class TGDownloader {
           i,
           workerProgress,
           startTime,
-          fileSize
+          fileSize,
+          MAX_CHUNK_SIZE
         )
       );
     }
@@ -420,15 +429,13 @@ export class TGDownloader {
    * Download a byte range using low-level upload.GetFile.
    * Each call downloads from startOffset to endOffset in 512KB chunks.
    */
-  async _downloadRange(fileLocation, sender, startOffset, endOffset, workerIdx, workerProgress, startTime, totalFileSize) {
+  async _downloadRange(fileLocation, sender, startOffset, endOffset, workerIdx, workerProgress, startTime, totalFileSize, chunkSize) {
     const chunks = [];
     let currentOffset = startOffset;
 
     while (currentOffset < endOffset) {
-      // Limit MUST be a multiple of 4096 and between 4096-524288 for MTProto
-      // Always request full MAX_CHUNK_SIZE - server returns only what's available for last chunk
-      const remaining = endOffset - currentOffset;
-      const limit = remaining < MAX_CHUNK_SIZE ? MAX_CHUNK_SIZE : MAX_CHUNK_SIZE;
+      // Limit MUST be a multiple of 4096 and max 1MB for MTProto
+      const limit = chunkSize;
 
       const request = new Api.upload.GetFile({
         location: fileLocation,
@@ -464,8 +471,8 @@ export class TGDownloader {
       const totalDownloaded = workerProgress.reduce((a, b) => a + b, 0);
       this._emitProgress(startTime, totalDownloaded, totalFileSize);
 
-      // If we got less than requested, we've reached the end
-      if (bytes.length < limit) break;
+      // If we got less than requested (and less than chunkSize), we've reached the end
+      if (bytes.length < chunkSize) break;
     }
 
     // Merge this worker's chunks
