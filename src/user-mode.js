@@ -363,7 +363,9 @@ async function loadDialogs() {
 
   try {
     dialogsCache = await userClient.getDialogs(100);
-    renderDialogs(dialogsCache);
+    // Apply active filter after loading
+    const activeFilter = document.querySelector('.chat-filter-btn.active')?.dataset?.filter || 'all';
+    filterDialogsByType(activeFilter);
   } catch (e) {
     userLog('error', `Failed to load chats: ${e.message}`);
     if (list) list.innerHTML = '<p class="text-dim">Failed to load chats.</p>';
