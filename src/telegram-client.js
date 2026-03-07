@@ -47,6 +47,11 @@ export class TGDownloader {
       // Monitor connection state
       this._startConnectionMonitor();
       
+      // Fetch missed updates (messages sent while offline)
+      if (this._onPendingUpdatesReady) {
+        this._fetchPendingUpdates();
+      }
+      
       return { success: true, botInfo: me };
     } catch (error) {
       this.connected = false;

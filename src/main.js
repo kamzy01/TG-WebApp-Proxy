@@ -8,6 +8,7 @@ import './polyfills.js';
 import './style.css';
 import { TGDownloader } from './telegram-client.js';
 import { parseTelegramLink, describeParsedLink, formatFileSize, getFileIcon } from './link-parser.js';
+import { initDB, saveMessage, getAllMessages, saveFile, getAllFiles, markFileDownloaded, clearAllData } from './db.js';
 
 // ===== State =====
 let downloader = null;
@@ -16,29 +17,40 @@ let isDownloading = false;
 let currentFileRef = null;
 
 // ===== Initialize UI =====
-function init() {
+async function init() {
+  // Initialize IndexedDB
+  await initDB();
+
   const app = document.getElementById('app');
-  app.innerHTML = renderApp();
-  bindEvents();
   
   const tempDownloader = new TGDownloader(() => {}, () => {});
   const saved = tempDownloader.getSavedCredentials();
-  if (saved) {
+  const hasSavedCreds = saved && saved.apiId && saved.apiHash && saved.botToken;
+  
+  app.innerHTML = renderApp(hasSavedCreds);
+  bindEvents();
+  
+  if (hasSavedCreds) {
+    // Fill hidden fields (for manual connect if needed)
     document.getElementById('apiId').value = saved.apiId || '';
     document.getElementById('apiHash').value = saved.apiHash || '';
     document.getElementById('botToken').value = saved.botToken || '';
   }
   
-  addLog('dim', 'Ready. Enter your credentials and connect.');
   addLog('dim', 'All processing happens in your browser. Nothing is sent to any server.');
   
-  if (saved && saved.apiId && saved.apiHash && saved.botToken) {
+  // Restore saved data from IndexedDB
+  await restoreFromDB();
+  
+  if (hasSavedCreds) {
     addLog('info', 'Found saved session. Auto-reconnecting...');
     autoReconnect(saved);
+  } else {
+    addLog('dim', 'Enter your credentials and connect.');
   }
 }
 
-function renderApp() {
+function renderApp(hasSavedCreds) {
   return `
     <div class="header">
       <h1>📥 Telegram File Downloader</h1>
@@ -54,31 +66,71 @@ function renderApp() {
           <span id="statusText">Disconnected</span>
         </span>
       </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label for="apiId">API ID</label>
-          <input type="text" id="apiId" placeholder="12345678" autocomplete="off" />
+      ${hasSavedCreds ? `
+        <!-- Creds saved — show minimal bar -->
+        <div class="flex-between">
+          <span class="text-dim">🔑 Credentials saved</span>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn-outline btn-sm" id="btnShowCreds">Edit</button>
+            <button class="btn-outline btn-sm" id="btnClearSession" title="Clear saved session">🗑️ Clear</button>
+          </div>
+        </div>
+        <div id="credsForm" class="hidden mt-12">
+      ` : `
+        <div id="credsForm">
+      `}
+        <div class="form-row">
+          <div class="form-group">
+            <label for="apiId">API ID</label>
+            <input type="text" id="apiId" placeholder="12345678" autocomplete="off" />
+          </div>
+          <div class="form-group">
+            <label for="apiHash">API Hash</label>
+            <input type="password" id="apiHash" placeholder="abc123def456..." autocomplete="off" />
+          </div>
         </div>
         <div class="form-group">
-          <label for="apiHash">API Hash</label>
-          <input type="password" id="apiHash" placeholder="abc123def456..." autocomplete="off" />
+          <label for="botToken">Bot Token</label>
+          <input type="password" id="botToken" placeholder="123456789:ABCdefGHIjklMNOpqrsTUVwxyz" autocomplete="off" />
         </div>
+        <p class="hint">
+          Get API ID & Hash from <a href="https://my.telegram.org" target="_blank" style="color: var(--primary)">my.telegram.org</a> → 
+          API Development Tools. Bot token from <a href="https://t.me/BotFather" target="_blank" style="color: var(--primary)">@BotFather</a>.
+        </p>
       </div>
-      <div class="form-group">
-        <label for="botToken">Bot Token</label>
-        <input type="password" id="botToken" placeholder="123456789:ABCdefGHIjklMNOpqrsTUVwxyz" autocomplete="off" />
-      </div>
-      <p class="hint">
-        Get API ID & Hash from <a href="https://my.telegram.org" target="_blank" style="color: var(--primary)">my.telegram.org</a> → 
-        API Development Tools. Bot token from <a href="https://t.me/BotFather" target="_blank" style="color: var(--primary)">@BotFather</a>.
-      </p>
+      ${hasSavedCreds ? '' : `
       <div class="mt-16" style="display: flex; gap: 8px;">
         <button class="btn-primary" id="btnConnect" style="flex: 1;">⚡ Connect</button>
         <button class="btn-outline btn-sm" id="btnClearSession" title="Clear saved session">🗑️</button>
       </div>
+      `}
     </div>
 
-    <!-- Download Card -->
+    <!-- Incoming Messages (first) -->
+    <div class="card" id="messagesCard">
+      <div class="flex-between mb-8">
+        <h2><span class="icon">💬</span> Incoming Messages</h2>
+        <span class="text-dim" id="msgListeningStatus">Not listening</span>
+      </div>
+      <p class="hint mb-8">Messages sent to your bot appear here. Click to reply.</p>
+      <div id="messagesList">
+        <p class="text-dim">No messages yet.</p>
+      </div>
+    </div>
+
+    <!-- Incoming Files (second) -->
+    <div class="card" id="incomingCard">
+      <div class="flex-between mb-8">
+        <h2><span class="icon">📨</span> Incoming Files</h2>
+        <span class="text-dim" id="listeningStatus">Not listening</span>
+      </div>
+      <p class="hint mb-8">Send files to your bot — they appear here for download.</p>
+      <div id="incomingList">
+        <p class="text-dim">No incoming files yet.</p>
+      </div>
+    </div>
+
+    <!-- Download Card (third) -->
     <div class="card" id="downloadCard">
       <h2><span class="icon">📥</span> Download File</h2>
       <div class="form-group">
@@ -118,45 +170,13 @@ function renderApp() {
       </div>
     </div>
 
-    <!-- Incoming Messages -->
-    <div class="card" id="messagesCard">
-      <div class="flex-between mb-8">
-        <h2><span class="icon">💬</span> Incoming Messages</h2>
-        <span class="text-dim" id="msgListeningStatus">Not listening</span>
-      </div>
-      <p class="hint mb-8">Messages sent to your bot appear here. Click to reply.</p>
-      <div id="messagesList">
-        <p class="text-dim">No messages yet.</p>
-      </div>
-    </div>
-
-    <!-- Incoming Files -->
-    <div class="card" id="incomingCard">
-      <div class="flex-between mb-8">
-        <h2><span class="icon">📨</span> Incoming Files</h2>
-        <span class="text-dim" id="listeningStatus">Not listening</span>
-      </div>
-      <p class="hint mb-8">Send files to your bot — they appear here for download.</p>
-      <div id="incomingList">
-        <p class="text-dim">No incoming files yet.</p>
-      </div>
-    </div>
-
-    <!-- Log Card -->
+    <!-- Log Card (fourth) -->
     <div class="card">
       <div class="flex-between mb-8">
         <h2><span class="icon">📋</span> Log</h2>
         <button class="btn-outline btn-sm" id="btnClearLog">Clear</button>
       </div>
       <div class="log-container" id="logContainer"></div>
-    </div>
-
-    <!-- Download History -->
-    <div class="card" id="historyCard">
-      <h2><span class="icon">📜</span> Download History</h2>
-      <div id="historyList">
-        <p class="text-dim">No downloads yet.</p>
-      </div>
     </div>
 
     <!-- Reply Popup Modal -->
@@ -185,15 +205,90 @@ function renderApp() {
   `;
 }
 
+// ===== Restore from IndexedDB =====
+async function restoreFromDB() {
+  try {
+    // Restore messages
+    const msgs = await getAllMessages(50);
+    for (const msg of msgs.reverse()) {
+      renderRestoredMessage(msg);
+    }
+    
+    // Restore files
+    const files = await getAllFiles(50);
+    for (const file of files.reverse()) {
+      renderRestoredFile(file);
+    }
+    
+    if (msgs.length || files.length) {
+      addLog('dim', `Restored ${msgs.length} messages and ${files.length} files from local storage.`);
+    }
+  } catch (e) {
+    addLog('dim', 'Could not restore saved data.');
+  }
+}
+
+function renderRestoredMessage(msg) {
+  const list = document.getElementById('messagesList');
+  if (!list) return;
+  if (list.querySelector('.text-dim')) list.innerHTML = '';
+
+  const typeIcons = { User: '👤', Channel: '📢', Group: '👥' };
+  const typeIcon = typeIcons[msg.senderType] || '💬';
+  const time = msg.date ? new Date(msg.date).toLocaleTimeString() : '';
+  const preview = msg.text || (msg.hasMedia ? '📎 [Media]' : '[Empty]');
+
+  const item = document.createElement('div');
+  item.className = 'msg-item';
+  item.innerHTML = `
+    <div class="msg-sender">
+      <span class="sender-badge sender-${(msg.senderType || 'user').toLowerCase()}">${typeIcon} ${msg.senderType || 'User'}</span>
+      <span class="msg-sender-name">${escapeHtml(msg.senderName || 'Unknown')}</span>
+      <span class="msg-time">${time}</span>
+    </div>
+    <div class="msg-text">${escapeHtml(preview.length > 150 ? preview.slice(0, 150) + '...' : preview)}</div>
+    ${msg.hasMedia ? '<div class="msg-media-badge">📎 Has attachment</div>' : ''}
+  `;
+  list.prepend(item);
+}
+
+function renderRestoredFile(file) {
+  const list = document.getElementById('incomingList');
+  if (!list) return;
+  if (list.querySelector('.text-dim')) list.innerHTML = '';
+
+  const icon = getFileIcon(file.mimeType, file.fileName);
+  const time = file.date ? new Date(file.date).toLocaleTimeString() : '';
+
+  const item = document.createElement('div');
+  item.className = 'incoming-file-item';
+  item.innerHTML = `
+    <div class="incoming-file-header">
+      <span class="file-icon">${icon}</span>
+      <div class="file-details">
+        <div class="file-name">${file.fileName}</div>
+        <div class="file-meta">${formatFileSize(file.fileSize)} • ${file.mimeType || 'Unknown'} • ${file.chatName || ''} • ${time}</div>
+      </div>
+    </div>
+    <div class="text-dim" style="margin-top:6px; font-size:0.78rem;">${file.downloaded ? '✅ Downloaded' : '⏳ Connect to download'}</div>
+  `;
+  list.prepend(item);
+}
+
 // ===== Event Bindings =====
 function bindEvents() {
-  document.getElementById('btnConnect').addEventListener('click', handleConnect);
+  const btnConnect = document.getElementById('btnConnect');
+  if (btnConnect) btnConnect.addEventListener('click', handleConnect);
   document.getElementById('btnFetchInfo').addEventListener('click', handleFetchInfo);
   document.getElementById('btnDownload').addEventListener('click', handleDownload);
   document.getElementById('btnClearLog').addEventListener('click', () => {
     document.getElementById('logContainer').innerHTML = '';
   });
   document.getElementById('btnClearSession').addEventListener('click', handleClearSession);
+  const btnShowCreds = document.getElementById('btnShowCreds');
+  if (btnShowCreds) btnShowCreds.addEventListener('click', () => {
+    document.getElementById('credsForm').classList.toggle('hidden');
+  });
   document.getElementById('btnCloseModal').addEventListener('click', closeReplyModal);
   document.getElementById('btnSendReply').addEventListener('click', handleSendReply);
   document.getElementById('replyInput').addEventListener('keydown', (e) => {
@@ -228,26 +323,21 @@ function bindEvents() {
 
 // ===== Auto Reconnect =====
 async function autoReconnect(saved) {
-  const btn = document.getElementById('btnConnect');
-  btn.disabled = true;
-  btn.innerHTML = '⏳ Reconnecting...';
   setConnectionStatus('connecting');
   try {
     downloader = new TGDownloader(addLog, updateProgress);
     await downloader.connect(saved.apiId, saved.apiHash, saved.botToken);
     isConnected = true;
     setConnectionStatus('connected');
-    btn.innerHTML = '🔌 Disconnect';
-    btn.className = 'btn-danger';
     startListeners();
-    const link = document.getElementById('messageLink').value.trim();
-    if (parseTelegramLink(link)) document.getElementById('btnFetchInfo').disabled = false;
+    const link = document.getElementById('messageLink')?.value?.trim();
+    if (link && parseTelegramLink(link)) {
+      const btn = document.getElementById('btnFetchInfo');
+      if (btn) btn.disabled = false;
+    }
   } catch (error) {
     setConnectionStatus('disconnected');
-    btn.innerHTML = '⚡ Connect';
-    addLog('warn', `Auto-reconnect failed. Click Connect to try manually.`);
-  } finally {
-    btn.disabled = false;
+    addLog('warn', `Auto-reconnect failed: ${error.message}`);
   }
 }
 
@@ -390,6 +480,9 @@ function addIncomingFile(fileRef) {
   `;
   item.querySelector('button').addEventListener('click', () => handleIncomingDownload(item, fileRef));
   list.prepend(item);
+
+  // Persist to IndexedDB
+  saveFile(fileRef).catch(() => {});
 }
 
 async function handleIncomingDownload(itemEl, fileRef) {
@@ -465,6 +558,9 @@ function addIncomingMessage(msgInfo) {
   item.querySelector('.msg-reply-btn').addEventListener('click', () => openReplyModal(msgInfo));
 
   list.prepend(item);
+
+  // Persist to IndexedDB
+  saveMessage(msgInfo).catch(() => {});
 }
 
 // ===== Reply Modal =====
