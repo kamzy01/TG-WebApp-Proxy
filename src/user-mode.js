@@ -18,6 +18,7 @@ let userReplyToMsgId = null;
 let oldestMsgId = 0;
 let isLoadingOlder = false;
 let _currentPage = 'main'; // 'main' | 'settings'
+let _activeDownloadId = 0; // Tracks current download, increments to cancel old ones
 
 const thumbCache = new Map();
 const rawMessageCache = new Map();
@@ -129,6 +130,7 @@ export function renderUserMode(container, addLog, switchMode) {
             <div class="progress-info">
               <span id="userProgressPercent">0%</span>
               <span id="userProgressSpeed">--</span>
+              <button class="btn-danger btn-sm" id="btnCancelDownload" style="padding:2px 10px; font-size:0.75rem; width:auto;">✕ Cancel</button>
             </div>
           </div>
         </div>
@@ -1073,18 +1075,51 @@ window._playVideo = async (msgId, mimeType) => {
   setTimeout(() => document.getElementById('userProgressBox')?.classList.add('hidden'), 1000);
 };
 
+/** Cancel current download by incrementing the download ID */
+function cancelUserDownload() {
+  _activeDownloadId++;
+  document.getElementById('userProgressBox')?.classList.add('hidden');
+  const bar = document.getElementById('userProgressBar');
+  if (bar) bar.style.width = '0%';
+  userLog('warn', '⚠️ Download cancelled.');
+}
+
+// Bind cancel button
+document.getElementById('btnCancelDownload')?.addEventListener('click', cancelUserDownload);
+
 window._downloadUserMedia = async (msgId) => {
   if (!userClient?.connected || !currentEntity) return;
-  userLog('info', `Downloading #${msgId}...`);
+
+  // Cancel any previous download
+  _activeDownloadId++;
+  const myDownloadId = _activeDownloadId;
+
+  userLog('info', `📥 Downloading #${msgId}...`);
   let rawMsg = rawMessageCache.get(msgId);
   if (!rawMsg) { const msgs = await userClient.getMessages(currentEntity, 1, msgId + 1); const m = msgs.find(m => m.id === msgId); if (!m?.message) { userLog('error', 'Not found.'); return; } rawMsg = m.message; }
   const media = rawMsg.media; let fileName, mimeType;
   if (media?.document) { fileName = 'file'; mimeType = media.document.mimeType || 'application/octet-stream'; for (const a of media.document.attributes || []) { if (a.className === 'DocumentAttributeFilename') fileName = a.fileName; } }
   else if (media?.photo) { fileName = `photo_${msgId}.jpg`; mimeType = 'image/jpeg'; }
   else { fileName = `file_${msgId}`; mimeType = 'application/octet-stream'; }
-  document.getElementById('userProgressBox')?.classList.remove('hidden');
-  try { await userClient.downloadAndSave(rawMsg, fileName, mimeType); } catch (e) { userLog('error', `Download failed: ${e.message}`); }
-  setTimeout(() => document.getElementById('userProgressBox')?.classList.add('hidden'), 2000);
+
+  // Show progress, reset bar
+  const progressBox = document.getElementById('userProgressBox');
+  const bar = document.getElementById('userProgressBar');
+  if (bar) bar.style.width = '0%';
+  progressBox?.classList.remove('hidden');
+
+  try {
+    await userClient.downloadAndSave(rawMsg, fileName, mimeType);
+    // Only hide if this download is still the active one
+    if (_activeDownloadId === myDownloadId) {
+      setTimeout(() => progressBox?.classList.add('hidden'), 2000);
+    }
+  } catch (e) {
+    if (_activeDownloadId === myDownloadId) {
+      userLog('error', `Download failed: ${e.message}`);
+      progressBox?.classList.add('hidden');
+    }
+  }
 };
 
 // ===== Reply & Send =====
