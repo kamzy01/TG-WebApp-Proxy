@@ -749,6 +749,20 @@ function setConnectionStatus(status) {
   if (btnDisconnect) {
     btnDisconnect.style.display = status === 'connected' ? '' : 'none';
   }
+  
+  // Update listening status indicators
+  const fileStatus = document.getElementById('listeningStatus');
+  const msgStatus = document.getElementById('msgListeningStatus');
+  if (status === 'connected') {
+    if (fileStatus) fileStatus.textContent = '🟢 Listening';
+    if (msgStatus) msgStatus.textContent = '🟢 Listening';
+  } else if (status === 'disconnected') {
+    if (fileStatus) fileStatus.textContent = '🔴 Not listening';
+    if (msgStatus) msgStatus.textContent = '🔴 Not listening';
+  } else if (status === 'connecting') {
+    if (fileStatus) fileStatus.textContent = '🟡 Connecting...';
+    if (msgStatus) msgStatus.textContent = '🟡 Connecting...';
+  }
 }
 
 function addLog(type, message) {
