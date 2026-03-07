@@ -19,7 +19,7 @@ const CHUNK_SIZES = [
 ];
 
 const DEFAULTS = {
-  parallelWorkers: 8,
+  parallelWorkers: 4,
   chunkSize: 524288,       // 512KB — MTProto standard max
   proxyEnabled: false,
   autoChunkSize: false,

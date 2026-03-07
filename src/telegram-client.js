@@ -293,7 +293,7 @@ export class TGDownloader {
     // Read settings for workers (use override if provided, else settings)
     const settings = getSettings();
     let connections = connectionsOverride || settings.parallelWorkers || 8;
-    connections = Math.min(Math.max(1, connections), 32);
+    connections = Math.min(Math.max(1, connections), 8);
     const { fileSize, fileName, mimeType, fileLocation, dcId } = fileRef;
 
     // For small files or single connection, use simple download

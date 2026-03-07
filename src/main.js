@@ -248,8 +248,8 @@ function renderApp(hasSavedCreds) {
       <div class="form-row">
         <div class="form-group">
           <label for="settingsWorkers">Parallel Workers</label>
-          <input type="number" id="settingsWorkers" min="1" max="32" value="8" style="background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; color: var(--text); font-size: 0.95rem;" />
-          <p class="hint">1–32 parallel download connections (default: 8)</p>
+          <input type="number" id="settingsWorkers" min="1" max="8" value="4" style="background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; color: var(--text); font-size: 0.95rem;" />
+          <p class="hint">1–8 parallel download connections (default: 4)</p>
         </div>
         <div class="form-group">
           <label for="settingsChunkSize">Chunk Size</label>
@@ -1282,7 +1282,7 @@ function handleSaveSettings() {
   const proxyEnabled = !!document.getElementById('settingsProxy')?.checked;
 
   const s = getSettings();
-  s.parallelWorkers = Math.min(Math.max(1, workers), 32);
+  s.parallelWorkers = Math.min(Math.max(1, workers), 8);
   s.chunkSize = chunkSize;
   s.proxyEnabled = proxyEnabled;
   saveSettings(s);
