@@ -173,6 +173,15 @@ export async function saveFile(fileData) {
     mimeType: fileData.mimeType,
     chatName: fileData.chatName || '',
     dcId: fileData.dcId,
+    // Store file IDs for reconstruction after refresh
+    docId: fileData.docId || null,
+    docAccessHash: fileData.docAccessHash || null,
+    docFileReference: fileData.docFileReference || null, // base64 encoded
+    photoId: fileData.photoId || null,
+    photoAccessHash: fileData.photoAccessHash || null,
+    photoFileReference: fileData.photoFileReference || null,
+    thumbSize: fileData.thumbSize || '',
+    isPhoto: fileData.isPhoto || false,
     date: fileData.date instanceof Date ? fileData.date.toISOString() : (fileData.date || new Date().toISOString()),
     downloaded: false,
   });

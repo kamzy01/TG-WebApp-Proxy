@@ -526,8 +526,23 @@ function addIncomingFile(fileRef) {
   item.querySelector('button').addEventListener('click', () => handleIncomingDownload(item, fileRef));
   list.prepend(item);
 
-  // Persist to IndexedDB
-  saveFile(fileRef).catch(() => {});
+  // Persist to IndexedDB with doc IDs for reconstruction after refresh
+  const saveData = { ...fileRef };
+  if (fileRef.message?.media?.document) {
+    const doc = fileRef.message.media.document;
+    saveData.docId = doc.id?.toString();
+    saveData.docAccessHash = doc.accessHash?.toString();
+    saveData.docFileReference = doc.fileReference ? Buffer.from(doc.fileReference).toString('base64') : null;
+  } else if (fileRef.message?.media?.photo) {
+    const photo = fileRef.message.media.photo;
+    saveData.photoId = photo.id?.toString();
+    saveData.photoAccessHash = photo.accessHash?.toString();
+    saveData.photoFileReference = photo.fileReference ? Buffer.from(photo.fileReference).toString('base64') : null;
+    saveData.isPhoto = true;
+    const sizes = photo.sizes || [];
+    saveData.thumbSize = sizes.length ? sizes[sizes.length - 1].type : '';
+  }
+  saveFile(saveData).catch(() => {});
 }
 
 async function handleIncomingDownload(itemEl, fileRef) {
