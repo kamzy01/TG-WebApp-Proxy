@@ -5,6 +5,7 @@
  * Example: /api/pluto.web.telegram.org/apiws
  * 
  * Supports both HTTP and WebSocket proxying.
+ * Based on: https://developers.cloudflare.com/workers/examples/websockets/
  */
 
 export async function onRequest(context) {
@@ -24,7 +25,6 @@ export async function onRequest(context) {
   }
 
   const remainingPath = pathSegments.slice(1).join('/');
-  const targetUrl = `https://${targetHost}/${remainingPath}`;
 
   // CORS preflight
   if (request.method === 'OPTIONS') {
@@ -37,85 +37,24 @@ export async function onRequest(context) {
     });
   }
 
-  // WebSocket upgrade
+  // WebSocket upgrade — per CF docs, just fetch() the target with the original request
+  // CF automatically handles WebSocket upgrade when request has Upgrade header
   const upgradeHeader = request.headers.get('Upgrade');
   if (upgradeHeader && upgradeHeader.toLowerCase() === 'websocket') {
-    try {
-      // Create upstream WebSocket connection via fetch
-      // CF Workers support wss:// in fetch() for WebSocket upgrade
-      const upstreamResp = await fetch(`wss://${targetHost}/${remainingPath}`, {
-        headers: {
-          'Upgrade': 'websocket',
-        },
-      });
-
-      // Check if upstream supports WebSocket
-      if (upstreamResp.webSocket) {
-        // Bridge: create a pair for the client, pipe to upstream
-        const upstream = upstreamResp.webSocket;
-        const pair = new WebSocketPair();
-        const [clientWs, serverWs] = Object.values(pair);
-
-        upstream.accept();
-        serverWs.accept();
-
-        // Bidirectional data pipe
-        upstream.addEventListener('message', e => {
-          try { serverWs.send(e.data); } catch {}
-        });
-        serverWs.addEventListener('message', e => {
-          try { upstream.send(e.data); } catch {}
-        });
-
-        // Bidirectional close pipe
-        upstream.addEventListener('close', e => {
-          try { serverWs.close(e.code || 1000, e.reason || ''); } catch {}
-        });
-        serverWs.addEventListener('close', e => {
-          try { upstream.close(e.code || 1000, e.reason || ''); } catch {}
-        });
-
-        // Error handling
-        upstream.addEventListener('error', () => {
-          try { serverWs.close(1011, 'upstream error'); } catch {}
-        });
-        serverWs.addEventListener('error', () => {
-          try { upstream.close(1011, 'client error'); } catch {}
-        });
-
-        return new Response(null, { status: 101, webSocket: clientWs });
-      }
-
-      // If no webSocket in response, return error info for debugging
-      const body = await upstreamResp.text();
-      return new Response(`WS upgrade failed. Status: ${upstreamResp.status}. Body: ${body.substring(0, 200)}`, { 
-        status: 502,
-        headers: { 'Access-Control-Allow-Origin': '*' }
-      });
-
-    } catch (err) {
-      return new Response(`WS Proxy error: ${err.message}\nStack: ${err.stack}`, { 
-        status: 502,
-        headers: { 'Access-Control-Allow-Origin': '*' }
-      });
-    }
+    const targetUrl = `https://${targetHost}/${remainingPath}`;
+    
+    // Per CF docs: pass the incoming request to fetch() which handles WS upgrade
+    return fetch(targetUrl, {
+      headers: request.headers,
+    });
   }
 
   // Regular HTTP proxy
+  const targetUrl = `https://${targetHost}/${remainingPath}`;
   try {
-    const proxyHeaders = new Headers();
-    proxyHeaders.set('Host', targetHost);
-    // Copy relevant headers from original request
-    for (const [key, val] of request.headers.entries()) {
-      if (!key.startsWith('cf-') && key !== 'host') {
-        proxyHeaders.set(key, val);
-      }
-    }
-    proxyHeaders.set('Host', targetHost);
-
     const response = await fetch(targetUrl, {
       method: request.method,
-      headers: proxyHeaders,
+      headers: request.headers,
       body: request.method !== 'GET' && request.method !== 'HEAD' ? request.body : undefined,
     });
 
