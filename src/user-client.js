@@ -323,6 +323,7 @@ export class TGUserClient {
     return dialogs.map(d => {
       const entity = d.entity;
       const isSelf = d.isUser && entity?.id && me?.id && entity.id.toString() === me.id.toString();
+      const isBot = d.isUser && !!entity?.bot;
       const username = entity?.username || '';
       const tgId = entity?.id?.toString() || d.id?.toString() || '';
       return {
@@ -335,6 +336,7 @@ export class TGUserClient {
         isGroup: d.isGroup,
         isUser: d.isUser,
         isSelf,
+        isBot,
         username,
         tgId,
         entity: d.entity,

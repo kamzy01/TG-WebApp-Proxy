@@ -113,6 +113,7 @@ export function renderUserMode(container, addLog, switchMode) {
         <div style="display: flex; gap: 4px; margin-bottom: 8px; flex-wrap: wrap;">
           <button class="btn-outline btn-sm chat-filter-btn active" data-filter="all" style="font-size:0.75rem; padding:4px 10px;">All</button>
           <button class="btn-outline btn-sm chat-filter-btn" data-filter="user" style="font-size:0.75rem; padding:4px 10px;">👤 Private</button>
+          <button class="btn-outline btn-sm chat-filter-btn" data-filter="bot" style="font-size:0.75rem; padding:4px 10px;">🤖 Bots</button>
           <button class="btn-outline btn-sm chat-filter-btn" data-filter="group" style="font-size:0.75rem; padding:4px 10px;">👥 Groups</button>
           <button class="btn-outline btn-sm chat-filter-btn" data-filter="channel" style="font-size:0.75rem; padding:4px 10px;">📢 Channels</button>
         </div>
@@ -850,7 +851,7 @@ function renderDialogs(dialogs) {
   for (const d of dialogs) {
     const item = document.createElement('div');
     item.className = 'msg-item convo-item';
-    const icon = d.isSelf ? '🔖' : d.isChannel ? '📢' : d.isGroup ? '👥' : '👤';
+    const icon = d.isSelf ? '🔖' : d.isBot ? '🤖' : d.isChannel ? '📢' : d.isGroup ? '👥' : '👤';
     const time = d.date ? d.date.toLocaleTimeString() : '';
     const preview = d.lastMessage.length > 80 ? d.lastMessage.slice(0, 80) + '...' : (d.lastMessage || '[No messages]');
     const hasUnread = d.unreadCount > 0;
@@ -883,7 +884,13 @@ function filterDialogs(query) {
 }
 function filterDialogsByType(type) {
   if (type === 'all') { renderDialogs(dialogsCache); return; }
-  renderDialogs(dialogsCache.filter(d => type === 'user' ? d.isUser : type === 'group' ? d.isGroup : type === 'channel' ? d.isChannel : true));
+  renderDialogs(dialogsCache.filter(d => {
+    if (type === 'bot') return d.isBot;
+    if (type === 'user') return d.isUser && !d.isBot;
+    if (type === 'group') return d.isGroup;
+    if (type === 'channel') return d.isChannel;
+    return true;
+  }));
 }
 
 // ===== Chat Viewer =====
