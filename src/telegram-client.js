@@ -1,19 +1,21 @@
 /**
- * Telegram MTProto Client wrapper using GramJS.
+ * Telegram MTProto Client wrapper using teleproto (fork of GramJS).
  * Runs entirely in the browser - connections via WebSocket.
  * Authenticates as a bot using bot token.
  * Downloads files with NO size limit (unlike Bot API's 20MB cap).
  * Supports PARALLEL chunk downloads for faster speeds.
  */
 
-import { TelegramClient, Api } from 'telegram';
-import { utils } from 'telegram';
-import { NewMessage } from 'telegram/events';
+import { TelegramClient, Api } from 'teleproto';
+import { utils } from 'teleproto';
+import { NewMessage } from 'teleproto/events';
 import bigInt from 'big-integer';
+import { BrowserSession } from './shims/browser-session.js';
+import { PromisedWebSockets } from './shims/promised-web-sockets.js';
 
 /**
  * Expose the Api namespace so main.js can reconstruct file locations
- * from stored IDs without importing 'telegram' directly.
+ * from stored IDs without importing 'teleproto' directly.
  */
 export function getApi() {
   return Api;
@@ -39,11 +41,12 @@ export class TGDownloader {
     try {
       this.onLog('info', 'Initializing MTProto connection...');
       this._credentials = { apiId, apiHash, botToken };
-      this.client = new TelegramClient('tg_bot', parseInt(apiId), apiHash, {
+      const session = new BrowserSession('tg_bot');
+      this.client = new TelegramClient(session, parseInt(apiId), apiHash, {
         connectionRetries: 10,
         retryDelay: 2000,
         autoReconnect: true,
-        useWSS: true,
+        networkSocket: PromisedWebSockets,
       });
       this.onLog('info', 'Connecting to Telegram servers...');
       await this.client.start({ botAuthToken: botToken });
@@ -134,7 +137,7 @@ export class TGDownloader {
       if (!this.connected || !this.client) return;
       try {
         // Silent health check every 30s
-        if (this.client._sender && !this.client._sender._userConnected) {
+        if (this.client._sender && !this.client._sender.isConnected()) {
           this.connected = false;
           if (this.onConnectionLost) this.onConnectionLost();
           this.onLog('warn', '⚠️ Connection lost. Will auto-reconnect on next action.');
@@ -160,10 +163,9 @@ export class TGDownloader {
   clearSession() {
     localStorage.removeItem(CREDENTIALS_KEY);
     this._fileCache.clear();
-    for (let i = localStorage.length - 1; i >= 0; i--) {
-      const key = localStorage.key(i);
-      if (key && key.startsWith('tg_bot:')) localStorage.removeItem(key);
-    }
+    // Clear browser session data
+    const session = new BrowserSession('tg_bot');
+    session.clear();
   }
 
   // ===== FETCH FILE INFO (cached) =====
@@ -316,7 +318,7 @@ export class TGDownloader {
   }
 
   /**
-   * Single-connection download using GramJS downloadMedia (simple, reliable)
+   * Single-connection download using downloadMedia (simple, reliable)
    */
   async _downloadSingle(fileRef) {
     const startTime = Date.now();
@@ -430,7 +432,7 @@ export class TGDownloader {
 
   /**
    * Download a byte range using low-level upload.GetFile.
-   * Each call downloads from startOffset to endOffset in 512KB chunks.
+   * Each call downloads from startOffset to endOffset in chunks.
    */
   async _downloadRange(fileLocation, sender, startOffset, endOffset, workerIdx, workerProgress, startTime, totalFileSize, chunkSize) {
     const chunks = [];
@@ -521,7 +523,7 @@ export class TGDownloader {
 
     this._onFileReceived = onFileReceived;
 
-    // GramJS event handler for new messages
+    // Event handler for new messages
     this.client.addEventHandler(async (event) => {
       try {
         const message = event.message;
@@ -687,7 +689,7 @@ export class TGDownloader {
           senderId,
           chatPeer,
           hasMedia,
-          message, // raw GramJS message for download/reply
+          message, // raw message for download/reply
           date: message.date ? new Date(message.date * 1000) : new Date(),
         };
 

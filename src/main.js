@@ -8,6 +8,7 @@ import './polyfills.js';
 import './proxy-hook.js';
 import './style.css';
 import { TGDownloader, getApi } from './telegram-client.js';
+// teleproto is a maintained fork of GramJS with up-to-date TL layers
 import { parseTelegramLink, describeParsedLink, formatFileSize, getFileIcon } from './link-parser.js';
 import { initDB, addMessageToConversation, addBotReplyToConversation, getAllConversations, getConversation, saveFile, getAllFiles, markFileDownloaded, clearAllData, deleteConversation, clearConversations, clearFiles } from './db.js';
 import { getSettings, saveSettings, getChunkSizeOptions, getDefaults } from './settings.js';
@@ -31,7 +32,7 @@ function showLandingPage() {
   app.innerHTML = `
     <div class="header">
       <h1>📥 Telegram Client</h1>
-      <p>Client-side MTProto • No file size limits • Powered by GramJS</p>
+      <p>Client-side MTProto • No file size limits • Powered by teleproto</p>
     </div>
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px;">
       <div class="card" style="cursor: pointer; text-align: center; transition: transform 0.15s, border-color 0.15s;" id="chooseBotMode"
@@ -125,7 +126,7 @@ function renderApp(hasSavedCreds) {
   return `
     <div class="header">
       <h1>📥 Telegram File Downloader</h1>
-      <p>Client-side MTProto • No file size limits • Parallel downloads • Powered by GramJS</p>
+      <p>Client-side MTProto • No file size limits • Parallel downloads • Powered by teleproto</p>
     </div>
 
     <!-- Connection Card -->
@@ -325,7 +326,7 @@ function renderApp(hasSavedCreds) {
 
     <p style="text-align: center; margin-top: 24px; font-size: 0.75rem; color: var(--text-dim);">
       🔒 Everything runs in your browser. Credentials never leave your device.<br/>
-      Built with <a href="https://gram.js.org" target="_blank" style="color: var(--primary)">GramJS</a> • 
+      Built with <a href="https://github.com/sanyok12345/teleproto" target="_blank" style="color: var(--primary)">teleproto</a> • 
       Deployed on <a href="https://pages.cloudflare.com" target="_blank" style="color: var(--primary)">Cloudflare Pages</a>
     </p>
   `;

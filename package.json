@@ -1,7 +1,7 @@
 {
   "name": "tgcf-dl",
-  "version": "1.0.0",
-  "description": "Telegram File Downloader - Client-side MTProto via GramJS, deployed on Cloudflare Pages",
+  "version": "2.0.0",
+  "description": "Telegram File Downloader - Client-side MTProto via teleproto, deployed on Cloudflare Pages",
   "private": true,
   "type": "module",
   "scripts": {
@@ -18,7 +18,7 @@
     "telegram",
     "downloader",
     "mtproto",
-    "gramjs",
+    "teleproto",
     "cloudflare-pages"
   ],
   "license": "MIT",
@@ -30,7 +30,7 @@
     "buffer": "^6.0.3",
     "events": "^3.3.0",
     "process": "^0.11.10",
-    "telegram": "^2.26.16",
+    "teleproto": "^1.223.1",
     "util": "^0.12.5"
   },
   "devDependencies": {

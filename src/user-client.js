@@ -1,15 +1,17 @@
 /**
- * Telegram User Client wrapper using GramJS.
+ * Telegram User Client wrapper using teleproto (fork of GramJS).
  * Authenticates as a user (not bot) using phone number + code + optional 2FA.
  * Provides chat list, message history, media download, and message sending.
  * 
- * Multi-account support: each account uses a different GramJS session name
+ * Multi-account support: each account uses a different session name
  * (tg_user_0, tg_user_1, ... tg_user_9). Up to 10 accounts.
  */
 
-import { TelegramClient, Api } from 'telegram';
-import { NewMessage } from 'telegram/events';
+import { TelegramClient, Api } from 'teleproto';
+import { NewMessage } from 'teleproto/events';
 import bigInt from 'big-integer';
+import { BrowserSession } from './shims/browser-session.js';
+import { PromisedWebSockets } from './shims/promised-web-sockets.js';
 import { getUserSettings } from './settings.js';
 
 const MIN_PARALLEL_SIZE = 1024 * 1024; // 1MB — below this, single-connection is fine
@@ -134,11 +136,12 @@ export class TGUserClient {
     this.onLog('info', `Initializing user MTProto client (account #${this.accountIndex})...`);
     this._apiId = apiId;
     this._apiHash = apiHash;
-    this.client = new TelegramClient(this._sessionName, parseInt(apiId), apiHash, {
+    const session = new BrowserSession(this._sessionName);
+    this.client = new TelegramClient(session, parseInt(apiId), apiHash, {
       connectionRetries: 10,
       retryDelay: 2000,
       autoReconnect: true,
-      useWSS: true,
+      networkSocket: PromisedWebSockets,
     });
     await this.client.connect();
     this.onLog('dim', 'Client connected, awaiting authentication...');
@@ -196,11 +199,12 @@ export class TGUserClient {
     const creds = this.getSavedCredentials();
     if (!creds) throw new Error('No saved user credentials.');
 
-    this.client = new TelegramClient(this._sessionName, parseInt(creds.apiId), creds.apiHash, {
+    const session = new BrowserSession(this._sessionName);
+    this.client = new TelegramClient(session, parseInt(creds.apiId), creds.apiHash, {
       connectionRetries: 10,
       retryDelay: 2000,
       autoReconnect: true,
-      useWSS: true,
+      networkSocket: PromisedWebSockets,
     });
 
     await this.client.connect();
@@ -292,18 +296,14 @@ export class TGUserClient {
 
   clearSession() {
     localStorage.removeItem(this._credsKey);
-    const prefix = this._sessionName + ':';
-    for (let i = localStorage.length - 1; i >= 0; i--) {
-      const key = localStorage.key(i);
-      if (key && key.startsWith(prefix)) localStorage.removeItem(key);
-    }
+    // Clear browser session data
+    const session = new BrowserSession(this._sessionName);
+    session.clear();
     // Also clear legacy keys for account 0
     if (this.accountIndex === 0) {
       localStorage.removeItem('tg_user_creds');
-      for (let i = localStorage.length - 1; i >= 0; i--) {
-        const key = localStorage.key(i);
-        if (key && key.startsWith('tg_user:')) localStorage.removeItem(key);
-      }
+      const legacySession = new BrowserSession('tg_user');
+      legacySession.clear();
     }
     // Remove from account list
     removeAccount(this.accountIndex);
@@ -416,7 +416,7 @@ export class TGUserClient {
       date: m.date ? new Date(m.date * 1000) : null,
       out: m.out, // sent by us
       media: mediaInfo,
-      message: m, // raw GramJS message for downloads
+      message: m, // raw message for downloads
       senderId: m.senderId?.toString(),
       senderName: '',
       replyToMsgId: m.replyTo?.replyToMsgId || null,
@@ -472,7 +472,7 @@ export class TGUserClient {
 
   /**
    * Download media from a message.
-   * @param {object} message - raw GramJS message
+   * @param {object} message - raw message
    * @param {boolean} thumb - download thumbnail instead
    */
   async downloadMedia(message, thumb = false) {
@@ -583,7 +583,7 @@ export class TGUserClient {
   // ===== PARALLEL DOWNLOAD =====
 
   /**
-   * Extract file location and metadata from a raw GramJS message for parallel download.
+   * Extract file location and metadata from a raw message for parallel download.
    */
   _extractFileLocation(message) {
     const media = message.media;
@@ -622,7 +622,7 @@ export class TGUserClient {
   /**
    * Download media with parallel connections for faster speed.
    * Falls back to single-connection for small files.
-   * @param {object} message - raw GramJS message
+   * @param {object} message - raw message
    * @param {Function} onProgress - (downloaded, total) => void
    * @param {Function} isCancelled - () => boolean, return true to abort
    * @param {number} connections - number of parallel connections (1-8)

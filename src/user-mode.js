@@ -299,7 +299,7 @@ export function renderUserMode(container, addLog, switchMode) {
 
     <p style="text-align: center; margin-top: 24px; font-size: 0.75rem; color: var(--text-dim);">
       🔒 Everything runs in your browser. Your session stays on your device.<br/>
-      Built with <a href="https://gram.js.org" target="_blank" style="color: var(--primary)">GramJS</a>
+      Built with <a href="https://github.com/sanyok12345/teleproto" target="_blank" style="color: var(--primary)">teleproto</a>
     </p>
   `;
 
