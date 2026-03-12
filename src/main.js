@@ -245,8 +245,8 @@ function renderApp(hasSavedCreds) {
       </div>
     </div>
 
-    <!-- Settings Card -->
-    <div class="card" id="settingsCard">
+    <!-- Settings Card (hidden by default, toggled via ⚙️ button) -->
+    <div class="card hidden" id="settingsCard">
       <div class="flex-between mb-8">
         <h2><span class="icon">⚙️</span> Settings</h2>
         <button class="btn-outline btn-sm" id="btnResetSettings">Reset Defaults</button>
@@ -299,6 +299,7 @@ function renderApp(hasSavedCreds) {
       <div class="flex-between mb-8">
         <h2><span class="icon">📋</span> Log</h2>
         <div style="display: flex; gap: 8px;">
+          <button class="btn-outline btn-sm" id="btnBotSettings">⚙️ Settings</button>
           <button class="btn-outline btn-sm" id="btnClearLog">Clear</button>
           <button class="btn-outline btn-sm" id="btnSwitchToUser">👤 User Mode</button>
         </div>
@@ -523,6 +524,11 @@ function bindEvents() {
     if (e.target.id === 'replyModal') closeReplyModal();
   });
   
+  // Toggle settings card visibility
+  document.getElementById('btnBotSettings')?.addEventListener('click', () => {
+    document.getElementById('settingsCard')?.classList.toggle('hidden');
+  });
+
   // Switch to user mode
   document.getElementById('btnSwitchToUser')?.addEventListener('click', () => {
     setSavedMode('user');
