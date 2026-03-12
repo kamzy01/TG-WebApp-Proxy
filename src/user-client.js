@@ -9,6 +9,7 @@
 
 import { TelegramClient, Api } from 'teleproto';
 import { NewMessage } from 'teleproto/events';
+import { ConnectionTCPObfuscated } from 'teleproto/network/connection/TCPObfuscated';
 import bigInt from 'big-integer';
 import { BrowserSession } from './shims/browser-session.js';
 import { PromisedWebSockets } from './shims/promised-web-sockets.js';
@@ -141,6 +142,7 @@ export class TGUserClient {
       connectionRetries: 10,
       retryDelay: 2000,
       autoReconnect: true,
+      connection: ConnectionTCPObfuscated,
       networkSocket: PromisedWebSockets,
     });
     await this.client.connect();
@@ -204,6 +206,7 @@ export class TGUserClient {
       connectionRetries: 10,
       retryDelay: 2000,
       autoReconnect: true,
+      connection: ConnectionTCPObfuscated,
       networkSocket: PromisedWebSockets,
     });
 

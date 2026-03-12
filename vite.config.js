@@ -22,6 +22,9 @@ export default defineConfig({
       'node:stream': resolve('src/shims/stream.js'),
       assert: resolve('src/shims/assert.js'),
       'node:assert': resolve('src/shims/assert.js'),
+      // teleproto uses zlib for GZIPPacked messages
+      zlib: resolve('src/shims/zlib.js'),
+      'node:zlib': resolve('src/shims/zlib.js'),
       // teleproto uses node-localstorage (Node.js only) — we don't need it in browser
       'node-localstorage': resolve('src/shims/node-localstorage.js'),
       // teleproto uses socks for proxy — not needed in browser
